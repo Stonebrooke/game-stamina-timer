@@ -163,20 +163,11 @@ const mockApi = {
         try {
           const parsed = JSON.parse(await f.text()) as TimersFile;
           if (!Array.isArray(parsed.timers)) throw new Error("文件格式不正确：缺少 timers 数组");
-          // 逐字段校验，任何一条非法整体拒绝（P0-3 脏数据防御）
+          // mock 仅为 vite 浏览器预览，权威性校验已在 Rust 后端（validate_timer）实现；
+          // 此处仅做基础结构校验，避免重复实现业务规则导致双源漂移（架构审查 ⑤）。
           for (const t of parsed.timers) {
             if (typeof t.id !== "string" || !t.id) throw new Error("存在缺少 id 的计时器");
             if (typeof t.name !== "string" || !t.name.trim()) throw new Error("存在缺少名称的计时器");
-            if (!(t.recoverMsPerPoint > 0) || !Number.isFinite(t.recoverMsPerPoint))
-              throw new Error(`「${t.name}」每点恢复时间非法`);
-            if (!(t.maxStamina >= 1) || !Number.isFinite(t.maxStamina))
-              throw new Error(`「${t.name}」体力上限非法`);
-            if (!Number.isFinite(t.currentStamina) || t.currentStamina < 0 || t.currentStamina > t.maxStamina)
-              throw new Error(`「${t.name}」当前体力非法`);
-            if (!Number.isFinite(t.lastUpdateTs) || t.lastUpdateTs <= 0)
-              throw new Error(`「${t.name}」锚点时间戳非法`);
-            if (!Number.isFinite(t.notifyEveryN) || t.notifyEveryN < 0)
-              throw new Error(`「${t.name}」每 N 点提醒非法`);
           }
           const file = mockRead();
           for (const t of parsed.timers) {

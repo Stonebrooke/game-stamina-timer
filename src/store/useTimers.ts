@@ -87,8 +87,11 @@ export const useTimers = create<TimersState>()((set) => ({
   clearError: () => set({ error: null })
 }));
 
-/** 当前体力派生（供组件 selector 使用） */
+/** 单一时钟订阅源：叶子组件用它订阅 now，避免 App 整树重渲染（架构审查 ②） */
+export const useNow = () => useTimers(s => s.now);
+
+/** 当前体力派生：内部走 useNow，订阅点收敛到单一 hook（架构审查 ②+③，消除死代码） */
 export function useCurrent(t: StaminaTimer): number {
-  const now = useTimers(s => s.now);
+  const now = useNow();
   return computeCurrent(t, now);
 }

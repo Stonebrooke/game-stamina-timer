@@ -1,9 +1,9 @@
 import { formatDuration, fullAtTs, isFull } from "../lib/stamina";
 import type { StaminaTimer } from "../lib/types";
+import { useNow } from "../store/useTimers";
 
 interface Props {
   timers: StaminaTimer[];
-  now: number;
 }
 
 const GUTTER = 96; // 左侧游戏名列宽
@@ -43,9 +43,10 @@ function tickLabel(ts: number, step: number): string {
 
 /**
  * 全部恢复时间轴：每游戏一行，标记回满时刻；左侧 now 游标。
- * 纯 SVG，随 1s tick 重渲染。
+ * 内部订阅 now（架构审查 ②），时间相关渲染下沉到本组件，不再由 App 透传。
  */
-export default function RecoveryTimeline({ timers, now }: Props) {
+export default function RecoveryTimeline({ timers }: Props) {
+  const now = useNow();
   if (timers.length === 0) return null;
 
   const entries = timers.map(t => ({

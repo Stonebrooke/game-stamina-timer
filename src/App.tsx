@@ -8,8 +8,18 @@ import type { NewTimer, StaminaTimer } from "./lib/types";
 import { useTimers } from "./store/useTimers";
 
 export default function App() {
-  const { timers, now, loading, error, load, add, update, remove, anchor, tick, clearError } =
-    useTimers();
+  // 架构审查 ②：用 selector 精确订阅，App 不再订阅 now，
+  // 1s tick 不再触发整树 reconcile（仅时间相关叶子组件各自订阅 now）。
+  const timers = useTimers(s => s.timers);
+  const loading = useTimers(s => s.loading);
+  const error = useTimers(s => s.error);
+  const load = useTimers(s => s.load);
+  const add = useTimers(s => s.add);
+  const update = useTimers(s => s.update);
+  const remove = useTimers(s => s.remove);
+  const anchor = useTimers(s => s.anchor);
+  const tick = useTimers(s => s.tick);
+  const clearError = useTimers(s => s.clearError);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<StaminaTimer | null>(null);
@@ -73,9 +83,9 @@ export default function App() {
         </div>
       )}
 
-      <OverviewBar timers={timers} now={now} />
+      <OverviewBar timers={timers} />
 
-      {!loading && <RecoveryTimeline timers={timers} now={now} />}
+      {!loading && <RecoveryTimeline timers={timers} />}
 
       <main className="app-main">
         {loading ? (
@@ -87,7 +97,6 @@ export default function App() {
         ) : (
           <TimerGrid
             timers={timers}
-            now={now}
             onAdd={() => {
               setEditing(null);
               setFormOpen(true);

@@ -1,28 +1,29 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
-  computeCurrent,
   formatDuration,
   isFull,
   msUntilFullFrom,
   msUntilNext
 } from "../lib/stamina";
 import type { StaminaTimer } from "../lib/types";
+import { useCurrent, useNow } from "../store/useTimers";
 import CircularProgress from "./CircularProgress";
 
 interface Props {
   timer: StaminaTimer;
-  now: number;
   onEdit: (t: StaminaTimer) => void;
   onDelete: (t: StaminaTimer) => void;
   onAnchor: (id: string, value: number) => Promise<void>;
 }
 
-export default function TimerCard({ timer, now, onEdit, onDelete, onAnchor }: Props) {
+/** 单张计时卡：now 内部订阅（架构审查 ②），外层 React.memo 让未变 timer 的卡片跳过 diff。 */
+function TimerCard({ timer, onEdit, onDelete, onAnchor }: Props) {
   const [anchoring, setAnchoring] = useState(false);
   const [anchorValue, setAnchorValue] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const current = computeCurrent(timer, now);
+  const now = useNow();
+  const current = useCurrent(timer);
   const full = isFull(timer, now);
   const nextMs = msUntilNext(timer, now);
   const fullMs = msUntilFullFrom(timer, now);
@@ -148,3 +149,5 @@ export default function TimerCard({ timer, now, onEdit, onDelete, onAnchor }: Pr
     </div>
   );
 }
+
+export default memo(TimerCard);

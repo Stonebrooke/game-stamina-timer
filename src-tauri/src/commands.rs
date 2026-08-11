@@ -1,7 +1,7 @@
 //! IPC 命令入口：只做参数校验 + 分发，业务读写落在 store。
 //! 契约见方案 §5.5。统一错误格式：Result<T, String>。
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tauri::State;
 use uuid::Uuid;
@@ -9,13 +9,35 @@ use uuid::Uuid;
 use crate::store::TimerStore;
 use crate::timer::{now_ms, validate_new, validate_timer, NewTimer, StaminaTimer, TimersFile};
 
-pub type SharedStore = Mutex<TimerStore>;
+/// 读多写少的桌面单用户场景：用 RwLock 替代 Mutex，
+/// 让多次 `list_timers`（前端轮询）/ `export_timers` 的读并发，不被写锁串行化。
+pub type SharedStore = RwLock<TimerStore>;
 
-fn lock<'a>(store: &'a State<'a, SharedStore>) -> Result<std::sync::MutexGuard<'a, TimerStore>, String> {
-    // 遇 Mutex 中毒（上游 panic 残留）时恢复数据，不令全部命令永久失败
-    match store.lock() {
+/// 非阻塞排障日志：命令入口打点（架构审查「监控」补充项，清单 #6）。
+/// 走 stderr，避免任何 I/O 阻塞命令主路径。
+macro_rules! trace_cmd {
+    ($name:expr) => {
+        eprintln!("[cmd] {} @{}", $name, crate::timer::now_ms());
+    };
+}
+
+/// 读锁：遇中毒（上游 panic 残留）恢复数据，不令命令永久失败
+fn read_lock<'a>(
+    store: &'a State<'a, SharedStore>,
+) -> Result<RwLockReadGuard<'a, TimerStore>, String> {
+    match store.read() {
         Ok(g) => Ok(g),
-        Err(poisoned) => Ok(poisoned.into_inner()),
+        Err(p) => Ok(p.into_inner()),
+    }
+}
+
+/// 写锁：遇中毒恢复数据（同 read_lock 语义）
+fn write_lock<'a>(
+    store: &'a State<'a, SharedStore>,
+) -> Result<RwLockWriteGuard<'a, TimerStore>, String> {
+    match store.write() {
+        Ok(g) => Ok(g),
+        Err(p) => Ok(p.into_inner()),
     }
 }
 
@@ -33,11 +55,13 @@ fn is_safe_json_path(path: &str) -> bool {
 
 #[tauri::command]
 pub fn list_timers(store: State<SharedStore>) -> Result<Vec<StaminaTimer>, String> {
-    Ok(lock(&store)?.file.timers.clone())
+    trace_cmd!("list_timers");
+    Ok(read_lock(&store)?.file.timers.clone())
 }
 
 #[tauri::command]
 pub fn add_timer(store: State<SharedStore>, input: NewTimer) -> Result<StaminaTimer, String> {
+    trace_cmd!("add_timer");
     validate_new(&input)?;
     let now = now_ms();
     let timer = StaminaTimer {
@@ -54,7 +78,7 @@ pub fn add_timer(store: State<SharedStore>, input: NewTimer) -> Result<StaminaTi
         color: input.color,
         created_at: now,
     };
-    let mut guard = lock(&store)?;
+    let mut guard = write_lock(&store)?;
     guard.mutate(|f| {
         f.timers.push(timer.clone());
         Ok(())
@@ -95,8 +119,9 @@ fn merge_update(existing: &StaminaTimer, timer: StaminaTimer, now: i64) -> Stami
 
 #[tauri::command]
 pub fn update_timer(store: State<SharedStore>, timer: StaminaTimer) -> Result<StaminaTimer, String> {
+    trace_cmd!("update_timer");
     validate_timer(&timer)?;
-    let mut guard = lock(&store)?;
+    let mut guard = write_lock(&store)?;
     let existing = guard
         .file
         .timers
@@ -121,7 +146,8 @@ pub fn update_timer(store: State<SharedStore>, timer: StaminaTimer) -> Result<St
 
 #[tauri::command]
 pub fn delete_timer(store: State<SharedStore>, id: String) -> Result<(), String> {
-    let mut guard = lock(&store)?;
+    trace_cmd!("delete_timer");
+    let mut guard = write_lock(&store)?;
     guard.mutate(|f| {
         let before = f.timers.len();
         f.timers.retain(|t| t.id != id);
@@ -140,7 +166,8 @@ pub fn mark_notified(
     notified_up_to: f64,
     full_notified: bool,
 ) -> Result<(), String> {
-    let mut guard = lock(&store)?;
+    trace_cmd!("mark_notified");
+    let mut guard = write_lock(&store)?;
     guard.mutate(|f| {
         let t = f
             .timers
@@ -160,7 +187,8 @@ pub fn anchor_timer(
     id: String,
     current_stamina: f64,
 ) -> Result<StaminaTimer, String> {
-    let mut guard = lock(&store)?;
+    trace_cmd!("anchor_timer");
+    let mut guard = write_lock(&store)?;
     let max = guard
         .file
         .timers
@@ -196,10 +224,11 @@ pub fn anchor_timer(
 /// 导出全部计时器到指定路径（路径须为 .json 绝对路径，P1-2）
 #[tauri::command]
 pub fn export_timers(store: State<SharedStore>, path: String) -> Result<(), String> {
+    trace_cmd!("export_timers");
     if !is_safe_json_path(&path) {
         return Err("仅支持导出到 .json 绝对路径（拒绝相对路径/UNC/目录穿越）".into());
     }
-    let guard = lock(&store)?;
+    let guard = read_lock(&store)?;
     let content = serde_json::to_string_pretty(&guard.file).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| format!("导出失败: {e}"))
 }
@@ -207,6 +236,7 @@ pub fn export_timers(store: State<SharedStore>, path: String) -> Result<(), Stri
 /// 从指定路径导入：校验后按 id 合并（同 id 覆盖），返回导入条数
 #[tauri::command]
 pub fn import_timers(store: State<SharedStore>, path: String) -> Result<usize, String> {
+    trace_cmd!("import_timers");
     if !is_safe_json_path(&path) {
         return Err("仅支持导入 .json 文件（拒绝相对路径/UNC/目录穿越）".into());
     }
@@ -232,7 +262,7 @@ pub fn import_timers(store: State<SharedStore>, path: String) -> Result<usize, S
     }
 
     let count = incoming.timers.len();
-    let mut guard = lock(&store)?;
+    let mut guard = write_lock(&store)?;
     guard.mutate(|f| {
         for t in incoming.timers {
             match f.timers.iter_mut().find(|x| x.id == t.id) {

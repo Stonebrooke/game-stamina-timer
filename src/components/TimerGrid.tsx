@@ -3,7 +3,6 @@ import TimerCard from "./TimerCard";
 
 interface Props {
   timers: StaminaTimer[];
-  now: number;
   onEdit: (t: StaminaTimer) => void;
   onDelete: (t: StaminaTimer) => void;
   onAnchor: (id: string, value: number) => Promise<void>;
@@ -11,7 +10,7 @@ interface Props {
 }
 
 /** 卡片网格 + 空库引导 */
-export default function TimerGrid({ timers, now, onEdit, onDelete, onAnchor, onAdd }: Props) {
+export default function TimerGrid({ timers, onEdit, onDelete, onAnchor, onAdd }: Props) {
   if (timers.length === 0) {
     return (
       <div className="empty-state">
@@ -31,7 +30,6 @@ export default function TimerGrid({ timers, now, onEdit, onDelete, onAnchor, onA
         <TimerCard
           key={t.id}
           timer={t}
-          now={now}
           onEdit={onEdit}
           onDelete={onDelete}
           onAnchor={onAnchor}

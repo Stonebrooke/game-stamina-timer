@@ -1,13 +1,15 @@
 import { formatDuration, isFull, msUntilFullFrom } from "../lib/stamina";
 import type { StaminaTimer } from "../lib/types";
+import { useNow } from "../store/useTimers";
 
 interface Props {
   timers: StaminaTimer[];
-  now: number;
 }
 
-/** 全局概览：追踪数 / 已满数 / 最快回满倒计时 */
-export default function OverviewBar({ timers, now }: Props) {
+/** 全局概览：追踪数 / 已满数 / 最快回满倒计时。
+ * 内部订阅 now（架构审查 ②），不再由 App 透传 prop。 */
+export default function OverviewBar({ timers }: Props) {
+  const now = useNow();
   if (timers.length === 0) return null;
 
   const fullCount = timers.filter(t => isFull(t, now)).length;
