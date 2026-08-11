@@ -245,7 +245,10 @@ mod tests {
         // 时钟回拨按 0
         assert_eq!(current_stamina_of(&t, t.last_update_ts - 999_999), 100.0);
         // 封顶
-        assert_eq!(current_stamina_of(&t, t.last_update_ts + 999_999_999_999), 240.0);
+        assert_eq!(
+            current_stamina_of(&t, t.last_update_ts + 999_999_999_999),
+            240.0
+        );
     }
 
     #[test]

@@ -25,8 +25,8 @@ use tauri_plugin_notification::NotificationExt;
 /// 数十~数百 ms）。`show()` 在释放锁后执行，使通知弹出与用户命令彻底解耦——
 /// 否则全局唯一锁被通知 I/O 占住时，所有 `add/update/delete/import` 会被串行阻塞（UI 冻结）。
 fn notification_loop(handle: tauri::AppHandle) {
-    use std::time::Duration;
     use crate::timer::notification_due;
+    use std::time::Duration;
 
     loop {
         std::thread::sleep(Duration::from_secs(30));
@@ -53,9 +53,7 @@ fn notification_loop(handle: tauri::AppHandle) {
                         let body = if full {
                             format!(
                                 "{} 体力已回满 {}/{}",
-                                t.name,
-                                t.max_stamina as i64,
-                                t.max_stamina as i64
+                                t.name, t.max_stamina as i64, t.max_stamina as i64
                             )
                         } else {
                             format!("{} 体力已恢复到 {} 点", t.name, latest as i64)

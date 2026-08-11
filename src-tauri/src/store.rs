@@ -26,7 +26,10 @@ impl TimerStore {
                     let _ = std::fs::rename(&path, &bak);
                     (
                         TimersFile::empty(),
-                        Some(format!("存档损坏已备份至 {}，已回退空库: {e}", bak.display())),
+                        Some(format!(
+                            "存档损坏已备份至 {}，已回退空库: {e}",
+                            bak.display()
+                        )),
                     )
                 }
             },
