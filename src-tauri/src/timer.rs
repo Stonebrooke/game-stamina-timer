@@ -65,10 +65,10 @@ fn validate_common(
         return Err("名称不能为空且不超过 50 字".into());
     }
     // 有限性 + 下界：Infinity/NaN 会漏过 `> 0.0`，必须显式 is_finite（P1-3）
-    if !recover_ms_per_point.is_finite() || !(recover_ms_per_point > 0.0) {
+    if !recover_ms_per_point.is_finite() || recover_ms_per_point <= 0.0 {
         return Err("每点恢复时间必须为大于 0 的有限值".into());
     }
-    if !max_stamina.is_finite() || !(max_stamina >= 1.0) {
+    if !max_stamina.is_finite() || max_stamina < 1.0 {
         return Err("体力上限必须为 >= 1 的有限值".into());
     }
     if !current_stamina.is_finite() || !(0.0..=max_stamina).contains(&current_stamina) {
@@ -245,7 +245,10 @@ mod tests {
         // 时钟回拨按 0
         assert_eq!(current_stamina_of(&t, t.last_update_ts - 999_999), 100.0);
         // 封顶
-        assert_eq!(current_stamina_of(&t, t.last_update_ts + 999_999_999_999), 240.0);
+        assert_eq!(
+            current_stamina_of(&t, t.last_update_ts + 999_999_999_999),
+            240.0
+        );
     }
 
     #[test]

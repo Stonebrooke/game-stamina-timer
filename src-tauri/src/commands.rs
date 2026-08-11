@@ -94,8 +94,7 @@ pub fn add_timer(store: State<SharedStore>, input: NewTimer) -> Result<StaminaTi
 fn merge_update(existing: &StaminaTimer, timer: StaminaTimer, now: i64) -> StaminaTimer {
     let mut next = timer;
     let current_changed = (existing.current_stamina - next.current_stamina).abs() > f64::EPSILON;
-    let rate_changed =
-        (existing.recover_ms_per_point - next.recover_ms_per_point).abs() > 1e-6;
+    let rate_changed = (existing.recover_ms_per_point - next.recover_ms_per_point).abs() > 1e-6;
     let max_changed = (existing.max_stamina - next.max_stamina).abs() > 1e-6;
 
     if current_changed {
@@ -118,7 +117,10 @@ fn merge_update(existing: &StaminaTimer, timer: StaminaTimer, now: i64) -> Stami
 }
 
 #[tauri::command]
-pub fn update_timer(store: State<SharedStore>, timer: StaminaTimer) -> Result<StaminaTimer, String> {
+pub fn update_timer(
+    store: State<SharedStore>,
+    timer: StaminaTimer,
+) -> Result<StaminaTimer, String> {
     trace_cmd!("update_timer");
     validate_timer(&timer)?;
     let mut guard = write_lock(&store)?;

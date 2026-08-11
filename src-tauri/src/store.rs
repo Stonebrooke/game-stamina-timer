@@ -26,7 +26,10 @@ impl TimerStore {
                     let _ = std::fs::rename(&path, &bak);
                     (
                         TimersFile::empty(),
-                        Some(format!("存档损坏已备份至 {}，已回退空库: {e}", bak.display())),
+                        Some(format!(
+                            "存档损坏已备份至 {}，已回退空库: {e}",
+                            bak.display()
+                        )),
                     )
                 }
             },
@@ -56,9 +59,7 @@ impl TimerStore {
         F: FnOnce(&mut TimersFile) -> Result<(), String>,
     {
         let backup = self.file.clone();
-        if let Err(e) = f(&mut self.file) {
-            return Err(e); // 业务校验失败：不动内存
-        }
+        f(&mut self.file)?; // 业务校验失败：不动内存
         if let Err(e) = self.save() {
             self.file = backup; // 落盘失败：回滚内存
             return Err(e);
