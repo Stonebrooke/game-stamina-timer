@@ -285,11 +285,22 @@ mod tests {
 
     #[test]
     fn is_safe_json_path_rejects_unsafe() {
-        assert!(is_safe_json_path("C:\\Users\\me\\stamina.json"));
-        assert!(!is_safe_json_path("C:\\Users\\me\\stamina.txt"));
+        // 绝对路径判定与平台相关：Windows 认盘符/UNC，Unix 认前导 /
+        #[cfg(windows)]
+        {
+            assert!(is_safe_json_path("C:\\Users\\me\\stamina.json"));
+            assert!(!is_safe_json_path("C:\\Users\\me\\stamina.txt"));
+            assert!(!is_safe_json_path("\\\\server\\share\\x.json"));
+            assert!(!is_safe_json_path("C:\\Users\\me\\..\\x.json"));
+        }
+        #[cfg(unix)]
+        {
+            assert!(is_safe_json_path("/tmp/stamina.json"));
+            assert!(!is_safe_json_path("/tmp/stamina.txt"));
+            assert!(!is_safe_json_path("/tmp/../etc/x.json"));
+        }
+        // 跨平台通用：相对路径一律拒绝
         assert!(!is_safe_json_path("relative/path.json"));
-        assert!(!is_safe_json_path("\\\\server\\share\\x.json"));
-        assert!(!is_safe_json_path("C:\\Users\\me\\..\\x.json"));
     }
 
     fn sample() -> StaminaTimer {
