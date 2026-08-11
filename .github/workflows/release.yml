@@ -36,6 +36,25 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Read version from tauri.conf.json
+        id: ver
+        working-directory: ./src-tauri
+        run: |
+          V=$(grep '"version"' tauri.conf.json | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved tauri.conf.json version: $V"
+
+      - name: Verify tag version matches tauri.conf.json
+        working-directory: ./src-tauri
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          CONF_VER="${{ steps.ver.outputs.version }}"
+          if [ "$TAG_VER" != "$CONF_VER" ]; then
+            echo "::error::Tag version ($TAG_VER) != tauri.conf.json version ($CONF_VER)"
+            exit 1
+          fi
+          echo "Version OK: tag=$TAG_VER conf=$CONF_VER"
+
       - name: Build and publish Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -45,7 +64,7 @@ jobs:
           releaseName: '游戏体力计时器 ${{ github.ref_name }}'
           releaseBody: |
             下载 Windows 安装包（NSIS）：
-            - `游戏体力计时器_X.Y.Z_x64-setup.exe`
+            - `游戏体力计时器_${{ steps.ver.outputs.version }}_x64-setup.exe`
             双击安装即可，会自动覆盖旧版本。
           releaseDraft: false
           prerelease: false
