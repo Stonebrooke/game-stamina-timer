@@ -1,0 +1,21 @@
+[package]
+name = "stamina-timer"
+version = "0.2.0"
+description = "游戏体力恢复计时器 — 基于时间戳的被动式多游戏体力追踪"
+edition = "2021"
+
+[lib]
+name = "stamina_timer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }

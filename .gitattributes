@@ -1,0 +1,25 @@
+# 跨平台换行符统一：所有文本文件以 LF 存储、并以 LF 检出
+# 覆盖 Windows 上 core.autocrlf=true 的默认行为，避免 .gitignore / 源码被转成 CRLF
+* text=auto eol=lf
+
+# 关键文件显式锁定 LF（即便将来全局规则变化也不受影响）
+.gitattributes text eol=lf
+.gitignore    text eol=lf
+*.md          text eol=lf
+LICENSE       text eol=lf
+*.json        text eol=lf
+*.toml        text eol=lf
+*.html        text eol=lf
+*.css         text eol=lf
+*.ts          text eol=lf
+*.tsx         text eol=lf
+*.js          text eol=lf
+*.mjs         text eol=lf
+*.rs          text eol=lf
+*.py          text eol=lf
+
+# 二进制资源：禁止换行符转换、不参与文本 diff
+*.png  binary
+*.ico  binary
+*.icns binary
+*.exe  binary
