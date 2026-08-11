@@ -9,12 +9,7 @@ jobs:
   publish-tauri:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [windows-latest]
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -49,8 +44,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '游戏体力计时器 ${{ github.ref_name }}'
           releaseBody: |
-            下载对应平台的安装包：
-            - Windows: `.exe` / `.msi` 安装程序
-            安装后自动覆盖旧版本。
+            下载 Windows 安装包（NSIS）：
+            - `游戏体力计时器_X.Y.Z_x64-setup.exe`
+            双击安装即可，会自动覆盖旧版本。
           releaseDraft: false
           prerelease: false
