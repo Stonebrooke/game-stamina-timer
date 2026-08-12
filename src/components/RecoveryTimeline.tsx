@@ -42,6 +42,48 @@ function tickLabel(ts: number, step: number): string {
 }
 
 /**
+ * 估算文本在 11px 字体下的渲染宽度（px）。
+ * 用于在 SVG 渲染前决定标签应放在数据点左侧还是右侧，避免溢出或重叠。
+ */
+function estimateTextWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) {
+    // CJK 字符约 11px，拉丁/数字/空格约 6px
+    w += ch.charCodeAt(0) > 127 ? 11 : 6;
+  }
+  return w;
+}
+
+interface LabelLayout {
+  x: number;
+  anchor: "start" | "end";
+}
+
+/**
+ * 智能标签布局：优先放在数据点右侧；右侧空间不足则放到左侧。
+ * 两侧均放不下时，向右侧压缩并保留最小边距。
+ */
+function layoutLabel(text: string, dotX: number): LabelLayout {
+  const textW = estimateTextWidth(text);
+  const margin = 10;
+  const minX = GUTTER + 4;
+  const maxX = WIDTH - RIGHT_PAD - 4;
+
+  // 右侧可容纳：最常见、最自然的阅读方向
+  if (dotX + margin + textW <= maxX) {
+    return { x: dotX + margin, anchor: "start" };
+  }
+
+  // 左侧可容纳：避免与右侧相邻数据点/边界重叠
+  if (dotX - margin - textW >= minX) {
+    return { x: dotX - margin, anchor: "end" };
+  }
+
+  // 两侧都放不下（极窄）：贴右侧边界，start 锚点向内生长
+  return { x: Math.max(minX, maxX - textW), anchor: "start" };
+}
+
+/**
  * 全部恢复时间轴：每游戏一行，标记回满时刻；左侧 now 游标。
  * 内部订阅 now（架构审查 ②），时间相关渲染下沉到本组件，不再由 App 透传。
  */
@@ -117,6 +159,8 @@ export default function RecoveryTimeline({ timers }: Props) {
         {entries.map((e, i) => {
           const cy = AXIS_H + i * ROW_H + ROW_H / 2;
           const dotX = e.full ? GUTTER : x(e.fullAt);
+          const remainText = e.full ? "已回满" : formatDuration(e.fullAt - now);
+          const label = layoutLabel(remainText, dotX);
           return (
             <g key={e.t.id}>
               <text x={GUTTER - 8} y={cy + 4} textAnchor="end" className="tl-name">
@@ -144,11 +188,16 @@ export default function RecoveryTimeline({ timers }: Props) {
                 </title>
               </circle>
               <text
-                x={Math.min(dotX + 10, WIDTH - RIGHT_PAD - 56)}
+                x={label.x}
                 y={cy + 4}
+                textAnchor={label.anchor}
                 className="tl-remain"
+                paintOrder="stroke"
+                stroke="var(--surface)"
+                strokeWidth={4}
+                strokeLinejoin="round"
               >
-                {e.full ? "已回满" : formatDuration(e.fullAt - now)}
+                {remainText}
               </text>
             </g>
           );
