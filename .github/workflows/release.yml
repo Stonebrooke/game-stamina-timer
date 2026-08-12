@@ -63,10 +63,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: '游戏体力计时器 ${{ github.ref_name }}'
+          releaseName: 'Game Stamina Timer ${{ github.ref_name }}'
           releaseBody: |
             下载 Windows 安装包（NSIS）：
-            - `游戏体力计时器_${{ steps.ver.outputs.version }}_x64-setup.exe`
+            - `Game Stamina Timer_${{ steps.ver.outputs.version }}_x64-setup.exe`
             双击安装即可，会自动覆盖旧版本。
           releaseDraft: false
           prerelease: false

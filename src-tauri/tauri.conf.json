@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "游戏体力计时器",
+  "productName": "Game Stamina Timer",
   "version": "0.2.1",
   "identifier": "com.stonebrooke.stamina-timer",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "游戏体力计时器",
+        "title": "Game Stamina Timer",
         "width": 1080,
         "height": 720,
         "minWidth": 760,
