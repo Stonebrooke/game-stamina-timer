@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { COLOR_POOL, GAME_PRESETS } from "../lib/presets";
+import { COLOR_POOL, DEFAULT_COLOR, GAME_PRESETS } from "../lib/presets";
 import type { NewTimer, StaminaTimer } from "../lib/types";
 
 interface Props {
@@ -29,7 +29,7 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
     currentStamina: "0",
     notifyOnFull: true,
     notifyEveryN: "0",
-    color: COLOR_POOL[0]
+    color: DEFAULT_COLOR
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
