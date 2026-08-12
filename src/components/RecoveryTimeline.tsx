@@ -67,10 +67,12 @@ export default function RecoveryTimeline({ timers }: Props) {
   const x = (ts: number) =>
     GUTTER + ((ts - now) / range) * (WIDTH - GUTTER - RIGHT_PAD);
 
-  // 刻度：从 now 之后第一个 step 整数倍开始
+  // 刻度：从 now 之后第一个 step 整数倍开始，跳过与 now 线重合的刻度
   const firstTick = Math.ceil(now / step) * step;
   const ticks: number[] = [];
-  for (let ts = firstTick; ts <= rangeEnd; ts += step) ticks.push(ts);
+  for (let ts = firstTick; ts <= rangeEnd; ts += step) {
+    if (ts > now) ticks.push(ts);
+  }
 
   return (
     <div className="timeline">
@@ -102,7 +104,12 @@ export default function RecoveryTimeline({ timers }: Props) {
           stroke="var(--text-muted)"
           strokeWidth={1.5}
         />
-        <text x={GUTTER + 4} y={AXIS_H - 12} className="tl-now">
+        <text
+          x={GUTTER - 8}
+          y={AXIS_H - 12}
+          textAnchor="end"
+          className="tl-now"
+        >
           现在
         </text>
 
