@@ -1,0 +1,10 @@
+{
+  "_comment": "Pinned fixed WebView2 runtime (x64) for the offline portable build. The 'version' + 'sha256' fields are kept fresh by .github/workflows/webview2-sync.yml, which opens a PR whenever Microsoft publishes a new Edge/WebView2 Stable version. 'sha256' is the real SHA-256 of the vendored CAB below and IS verified by release.yml / verify-wv2-dl.yml. The CAB itself is vendored into the repo under vendor/ and tracked by Git LFS (see .gitattributes) because the old hosting host 'msedgedl.blob.core.windows.net' no longer resolves (verified 2026-08-13 in CI + sandbox). 'localPath' points to the vendored file (used by release.yml; falls back to downloadUrl only if the vendored file is absent). 'sourceUrl' is the current Microsoft delivery CDN URL for this exact build (per-version GUID, not template-able) — use it to refresh the vendored CAB when bumping the version. 'downloadUrl'/'downloadUrlTemplate' are retained only as legacy/fallback references and currently point at the dead host.",
+  "arch": "x64",
+  "version": "151.0.4129.78",
+  "sha256": "d4c8864a764bc3ff015f7b644e1f9d022ba8a73ab470447398dda0cc9e75ab92",
+  "localPath": "vendor/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab",
+  "sourceUrl": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/355004fc-ebbc-42d3-b319-d43be39f8d39/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab",
+  "downloadUrlTemplate": "https://msedgedl.blob.core.windows.net/webview/Microsoft.WebView2.FixedVersionRuntime.{version}.{arch}.cab",
+  "downloadUrl": "https://msedgedl.blob.core.windows.net/webview/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab"
+}

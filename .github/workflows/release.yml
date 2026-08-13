@@ -11,19 +11,21 @@ jobs:
       contents: write
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.x
           cache: npm
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/registry
@@ -57,16 +59,150 @@ jobs:
           fi
           echo "Version OK: tag=$TAG_VER conf=$CONF_VER"
 
+      - name: Prepare fixed WebView2 runtime (offline)
+        id: webview2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wf = Get-Content webview2.json -Raw | ConvertFrom-Json
+          $ver = $wf.version
+          if (-not $ver) {
+            Write-Host "::notice::webview2.json version is empty - skipping fixed WebView2 runtime; NSIS falls back to the default bootstrapper."
+            "bundled=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $arch = if ($wf.arch) { $wf.arch } else { "x64" }
+          $url = if ($wf.downloadUrl) { $wf.downloadUrl } else { $wf.downloadUrlTemplate -replace '{version}', $ver -replace '{arch}', $arch }
+          $cab = Join-Path $env:RUNNER_TEMP "webview2.cab"
+          # 优先使用仓库内 vendored 的 CAB（离线、不依赖外部 host）；缺失才回退到下载
+          $local = if ($wf.localPath) { $wf.localPath } else { "" }
+          if ($local -and (Test-Path $local)) {
+            Write-Host "Using vendored WebView2 runtime from $local"
+            Copy-Item $local $cab -Force
+          } else {
+            Write-Host "Downloading fixed WebView2 runtime $ver ($arch) from $url"
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $cab -ErrorAction Stop
+            } catch {
+              Write-Host "::warning::Failed to obtain WebView2 runtime (local=$local, url=$url) - skipping fixed runtime bundling."
+              "bundled=false" >> $env:GITHUB_OUTPUT
+              exit 0
+            }
+          }
+          $actual = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
+          $expected = if ($wf.sha256) { $wf.sha256.Trim().ToLower() } else { "" }
+          if ($expected -and $expected -ne $actual) {
+            Write-Error "WebView2 CAB sha256 mismatch! expected=$expected actual=$actual"
+            exit 1
+          }
+          if (-not $expected) {
+            Write-Host "::warning::webview2.json sha256 is empty - bundling without integrity verification (the webview2-sync workflow will populate it)."
+          }
+          $stage = Join-Path $env:RUNNER_TEMP "webview2-extract"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          & (Get-Command expand.exe).Source $cab -F:* $stage | Out-Null
+          $runtimeExe = Get-ChildItem $stage -Recurse -Filter "msedgewebview2.exe" | Select-Object -First 1
+          if (-not $runtimeExe) {
+            Write-Host "::warning::Extracted WebView2 package has no msedgewebview2.exe - skipping fixed runtime bundling."
+            "bundled=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $destParent = Join-Path "src-tauri" "webview2-runtime"
+          if (Test-Path $destParent) { Remove-Item $destParent -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $destParent | Out-Null
+          Copy-Item (Join-Path $runtimeExe.DirectoryName "*") $destParent -Recurse -Force
+          $confPath = Join-Path "src-tauri" "tauri.conf.json"
+          $conf = Get-Content $confPath -Raw | ConvertFrom-Json
+          if (-not $conf.bundle) { $conf | Add-Member -NotePropertyName bundle -NotePropertyValue ([PSCustomObject]@{}) }
+          if (-not $conf.bundle.windows) { $conf.bundle | Add-Member -NotePropertyName windows -NotePropertyValue ([PSCustomObject]@{}) }
+          $conf.bundle.windows.webviewInstallMode = [PSCustomObject]@{ type = "fixedRuntime"; path = "./webview2-runtime" }
+          $conf | ConvertTo-Json -Depth 20 | Set-Content $confPath
+          Write-Host "::notice::Patched tauri.conf.json to bundle fixed WebView2 runtime v$ver."
+          "bundled=true" >> $env:GITHUB_OUTPUT
+          "wvver=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+          WV_BUNDLED: ${{ steps.webview2.outputs.bundled }}
+          WV_VER: ${{ steps.webview2.outputs.wvver }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            LOG=$(git log "${PREV}..${{ github.ref_name }}" --pretty=format:"- %s (%h)")
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)")
+          fi
+          if [ "$WV_BUNDLED" = "true" ]; then
+            WV="- 离线 WebView2 运行时（v${WV_VER}）已随包捆绑，目标机器无需联网安装。"
+          else
+            WV="- 未捆绑离线 WebView2 运行时：目标机器需已安装 WebView2 或由 NSIS 引导程序联网安装。"
+          fi
+          BODY="$RUNNER_TEMP/notes.md"
+          {
+            echo "## 下载"
+            echo ""
+            echo "- Windows 安装包（NSIS）：\`Game Stamina Timer_${VER}_x64-setup.exe\`（双击安装，自动覆盖旧版）"
+            echo "- 便携压缩包（解压即用）：\`Game Stamina Timer_${VER}_portable.zip\`"
+            echo ""
+            echo "## 运行环境"
+            echo "${WV}"
+            echo ""
+            echo "## 更新内容"
+            echo "${LOG}"
+          } > "$BODY"
+          {
+            echo "body<<NOTES_EOF"
+            cat "$BODY"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and publish Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Game Stamina Timer ${{ github.ref_name }}'
-          releaseBody: |
-            下载 Windows 安装包（NSIS）：
-            - `Game Stamina Timer_${{ steps.ver.outputs.version }}_x64-setup.exe`
-            双击安装即可，会自动覆盖旧版本。
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
+
+      - name: Package portable zip
+        id: zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ver = "${{ steps.ver.outputs.version }}"
+          $name = "Game Stamina Timer"
+          $relDir = Join-Path "src-tauri" "target" "release"
+          $exe = Join-Path $relDir "$name.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Built exe not found at $exe"; exit 1 }
+          $stage = Join-Path $env:RUNNER_TEMP "portable"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item $exe $stage
+          $res = Join-Path $relDir "resources"
+          if (Test-Path $res) { Copy-Item $res (Join-Path $stage "resources") -Recurse }
+          Get-ChildItem $relDir -Filter *.dll | ForEach-Object { Copy-Item $_.FullName (Join-Path $stage $_.Name) }
+          # Bundle the fixed WebView2 runtime if Tauri placed it next to the exe;
+          # otherwise fall back to the extracted copy prepared earlier.
+          $bundled = Get-ChildItem $relDir -Directory -Filter "Microsoft.WebView2*"
+          if ($bundled) {
+            $bundled | ForEach-Object { Copy-Item $_.FullName (Join-Path $stage $_.Name) -Recurse }
+          } else {
+            $srcRt = Join-Path "src-tauri" "webview2-runtime"
+            if (Test-Path $srcRt) { Copy-Item $srcRt (Join-Path $stage "webview2-runtime") -Recurse }
+          }
+          $zip = "Game Stamina Timer_${ver}_portable.zip"
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+          "zip=$((Resolve-Path $zip).Path)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload portable zip to Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "${{ steps.zip.outputs.zip }}"

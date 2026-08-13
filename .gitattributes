@@ -23,3 +23,6 @@ LICENSE       text eol=lf
 *.ico  binary
 *.icns binary
 *.exe  binary
+
+# WebView2 固定版本运行时 CAB：体积大（~300MB），走 Git LFS 存储，避免撑大 git 历史
+*.cab  filter=lfs diff=lfs merge=lfs -text
