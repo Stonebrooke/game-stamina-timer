@@ -1,0 +1,47 @@
+name: Verify WebView2 CAB download host
+
+# Scratch verification only. Triggered manually (workflow_dispatch) to confirm the
+# webview2.json downloadUrlTemplate resolves to the target host and actually serves a
+# valid, unpackable CAB. Not part of the normal CI/release paths.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'WebView2 fixed version to download (must match a real published version).'
+        required: false
+        default: '151.0.4129.78'
+      arch:
+        description: 'Target architecture.'
+        required: false
+        default: 'x64'
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Download CAB from resolved template URL and verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wf   = Get-Content webview2.json -Raw | ConvertFrom-Json
+          $ver  = "${{ github.event.inputs.version }}"
+          $arch = "${{ github.event.inputs.arch }}"
+          $url  = $wf.downloadUrlTemplate -replace '{version}', $ver -replace '{arch}', $arch
+          Write-Host "RESOLVED_URL=$url"                        # step 4: confirm host switch
+          $cab  = Join-Path $env:RUNNER_TEMP "wv2_${arch}.cab"
+          Invoke-WebRequest -Uri $url -OutFile $cab -ErrorAction Stop   # step 2: real download
+          $magic = [System.IO.File]::ReadAllBytes($cab)[0..3]
+          $head  = [System.Text.Encoding]::ASCII.GetString($magic)
+          if ($head -ne 'MSCF') { throw "not a CAB: got '$head'" }     # step 3: magic check
+          $sha = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
+          Write-Host "SHA256=$sha"
+          $dest = Join-Path $env:RUNNER_TEMP "wv2x_${arch}"
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          & (Get-Command expand.exe).Source $cab -F:* $dest | Out-Null  # unpack fallback
+          if (-not (Get-ChildItem $dest -Recurse -Filter msedgewebview2.exe)) { throw "no runtime exe in CAB" }
+          Write-Host "OK: host=$($url -split '/')[2] arch=$arch downloaded+valid CAB+unpacked"
