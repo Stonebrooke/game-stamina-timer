@@ -92,8 +92,10 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "ok=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "url=$URL"
+            echo "ok=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download CAB, re-vendor via Git LFS, and compute sha256
         id: fetch
@@ -120,9 +122,11 @@ jobs:
             exit 0
           fi
           SHA=$(sha256sum "$CAB" | awk '{print $1}')
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "cab=$CAB" >> "$GITHUB_OUTPUT"
-          echo "ok=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha256=$SHA"
+            echo "cab=$CAB"
+            echo "ok=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Update webview2.json + vendored CAB and open PR
         if: ${{ steps.fetch.outputs.ok == 'true' }}
@@ -138,6 +142,7 @@ jobs:
           ARCH=$(jq -r '.arch // "x64"' webview2.json)
           # Keep version/sha256/localPath/sourceUrl fresh; legacy downloadUrl/downloadUrlTemplate
           # (dead host) are left untouched as references.
+          # shellcheck disable=SC2016  # $v/$s/$lp/$u/$a are jq variables (injected via --arg), not shell variables
           jq --arg v "$VER" --arg s "$SHA" --arg u "$URL" --arg a "$ARCH" --arg lp "$CAB" \
             '.version=$v | .sha256=$s | .localPath=$lp | .sourceUrl=$u | .arch=$a' \
             webview2.json > webview2.json.tmp

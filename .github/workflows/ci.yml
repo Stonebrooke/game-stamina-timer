@@ -37,8 +37,13 @@ jobs:
           C=$(grep '^version' src-tauri/Cargo.toml | head -1 | cut -d'"' -f2)
           T=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           echo "package.json=$V  Cargo.toml=$C  tauri.conf.json=$T"
-          [ "$V" = "$C" ] && [ "$V" = "$T" ] || { echo "::error::版本不一致: package=$V cargo=$C tauri=$T"; exit 1; }
-          echo "Version sync OK: $V"
+
+          if [ "$V" = "$C" ] && [ "$V" = "$T" ]; then
+            echo "Version sync OK: $V"
+          else
+            echo "::error::版本不一致: package=$V cargo=$C tauri=$T"
+            exit 1
+          fi
 
       - name: Run unit tests
         run: npm run test
