@@ -142,12 +142,9 @@ jobs:
           ARCH=$(jq -r '.arch // "x64"' webview2.json)
           # Keep version/sha256/localPath/sourceUrl fresh; legacy downloadUrl/downloadUrlTemplate
           # (dead host) are left untouched as references.
-          # shellcheck disable=SC2016
-          # $v/$s/$lp/$u/$a are jq variables (injected via --arg), not shell variables
           jq --arg v "$VER" --arg s "$SHA" --arg u "$URL" --arg a "$ARCH" --arg lp "$CAB" \
-            '.version=$v | .sha256=$s | .localPath=$lp | .sourceUrl=$u | .arch=$a' \
+            ".version=\$v | .sha256=\$s | .localPath=\$lp | .sourceUrl=\$u | .arch=\$a" \
             webview2.json > webview2.json.tmp
-          # shellcheck enable=SC2016
           mv webview2.json.tmp webview2.json
 
           git config user.name "github-actions[bot]"
