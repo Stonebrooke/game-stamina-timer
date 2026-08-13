@@ -1,0 +1,8 @@
+{
+  "_comment": "Pinned fixed WebView2 runtime (x64) for the offline portable build. The 'version' + 'sha256' fields are kept fresh by .github/workflows/webview2-sync.yml, which opens a PR whenever Microsoft publishes a new Edge/WebView2 Stable version. This is how the offline package's WebView2 hash follows upstream. Empty 'sha256' => the release job downloads + bundles best-effort without integrity verification (sync fills it on the next run). 'downloadUrl' is derived from downloadUrlTemplate + version + arch; override it directly if Microsoft changes the hosting host.",
+  "arch": "x64",
+  "version": "151.0.4129.78",
+  "sha256": "",
+  "downloadUrlTemplate": "https://msedgedl.blob.core.windows.net/webview/Microsoft.WebView2.FixedVersionRuntime.{version}.{arch}.cab",
+  "downloadUrl": "https://msedgedl.blob.core.windows.net/webview/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab"
+}
