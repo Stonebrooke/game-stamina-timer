@@ -1,13 +1,15 @@
-name: Verify WebView2 CAB (vendored) integrity
+name: Verify WebView2 CAB (vendored or download)
 
-# Scratch verification only. Triggered manually (workflow_dispatch) to confirm the
+# Scratch verification only. Triggered manually (workflow_dispatch) to confirm either the
 # vendored WebView2 CAB in the repo is present, has the correct SHA-256 (from webview2.json),
-# is a valid CAB, and unpacks to msedgewebview2.exe. Not part of normal CI/release paths.
+# is a valid CAB and unpacks to msedgewebview2.exe, or to confirm the webview2.json
+# downloadUrlTemplate resolves to the target host and actually serves a valid, unpackable CAB.
+# Not part of normal CI/release paths.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'WebView2 fixed version (should match webview2.json + vendored file).'
+        description: 'WebView2 fixed version (should match webview2.json; must be a real published version).'
         required: false
         default: '151.0.4129.78'
       arch:
@@ -23,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - name: Verify vendored CAB presence, integrity and unpack
+      - name: Verify vendored CAB or download+verify
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -32,23 +34,58 @@ jobs:
           $arch = "${{ github.event.inputs.arch }}"
           $local = if ($wf.localPath) { $wf.localPath } else { "vendor/Microsoft.WebView2.FixedVersionRuntime.$ver.$arch.cab" }
           Write-Host "LOCAL_PATH=$local"
-          if (-not (Test-Path $local)) { throw "vendored CAB not found at '$local'" }
-          $cab = (Resolve-Path $local).Path
-          # step 3a: CAB magic number
-          $magic = [System.IO.File]::ReadAllBytes($cab)[0..3]
-          $head  = [System.Text.Encoding]::ASCII.GetString($magic)
-          if ($head -ne 'MSCF') { throw "not a CAB: got '$head'" }
-          # step 3b: SHA-256 vs webview2.json baseline
-          $actual   = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
-          $expected = if ($wf.sha256) { $wf.sha256.Trim().ToLower() } else { "" }
-          Write-Host "SHA256=$actual"
-          if (-not $expected) { throw "webview2.json sha256 is empty - cannot verify integrity" }
-          if ($expected -ne $actual) { throw "sha256 mismatch! expected=$expected actual=$actual" }
-          Write-Host "SHA256 MATCH (expected=$expected)"
-          # unpack fallback
+
+          if (Test-Path $local) {
+            $cab = (Resolve-Path $local).Path
+            Write-Host "Using vendored CAB: $cab"
+
+            # magic check
+            $magic = [System.IO.File]::ReadAllBytes($cab)[0..3]
+            $head  = [System.Text.Encoding]::ASCII.GetString($magic)
+            if ($head -ne 'MSCF') { throw "not a CAB: got '$head'" }
+
+            # SHA-256 vs webview2.json baseline (vendored must have sha256)
+            $actual   = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
+            $expected = if ($wf.sha256) { $wf.sha256.Trim().ToLower() } else { "" }
+            Write-Host "SHA256=$actual"
+            if (-not $expected) { throw "webview2.json sha256 is empty - cannot verify integrity of vendored CAB" }
+            if ($expected -ne $actual) { throw "sha256 mismatch! expected=$expected actual=$actual" }
+            Write-Host "SHA256 MATCH (expected=$expected)"
+
+          } else {
+            if (-not $wf.downloadUrlTemplate) { throw "vendored CAB not found at '$local' and no downloadUrlTemplate present in webview2.json" }
+
+            $url  = $wf.downloadUrlTemplate -replace '{version}', $ver -replace '{arch}', $arch
+            Write-Host "RESOLVED_URL=$url"
+            $cab  = Join-Path $env:RUNNER_TEMP "wv2_${arch}.cab"
+            Invoke-WebRequest -Uri $url -OutFile $cab -ErrorAction Stop
+
+            # magic check
+            $magic = [System.IO.File]::ReadAllBytes($cab)[0..3]
+            $head  = [System.Text.Encoding]::ASCII.GetString($magic)
+            if ($head -ne 'MSCF') { throw "not a CAB: got '$head'" }
+
+            $sha = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
+            Write-Host "SHA256=$sha"
+
+            $expected = if ($wf.sha256) { $wf.sha256.Trim().ToLower() } else { "" }
+            if ($expected) {
+              if ($expected -ne $sha) { throw "sha256 mismatch! expected=$expected actual=$sha" }
+              Write-Host "SHA256 MATCH (expected=$expected)"
+            } else {
+              Write-Host "webview2.json sha256 empty — downloaded CAB integrity cannot be verified"
+            }
+          }
+
+          # unpack fallback (shared)
           $dest = Join-Path $env:RUNNER_TEMP "wv2x_${arch}"
           if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           & (Get-Command expand.exe).Source $cab -F:* $dest | Out-Null
           if (-not (Get-ChildItem $dest -Recurse -Filter msedgewebview2.exe)) { throw "no runtime exe in CAB" }
-          Write-Host "OK: vendored CAB valid, integrity verified, unpacked arch=$arch"
+
+          if (Test-Path $local) {
+            Write-Host "OK: vendored CAB valid, integrity verified, unpacked arch=$arch"
+          } else {
+            Write-Host "OK: host=$($url -split '/')[2] arch=$arch downloaded+valid CAB+unpacked"
+          }
