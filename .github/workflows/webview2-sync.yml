@@ -1,0 +1,139 @@
+name: Sync WebView2 Runtime
+
+# Keeps the offline portable package's WebView2 hash in sync with upstream.
+# - Dependabot only rolls pinned GitHub Action SHAs; it cannot track an arbitrary
+#   JSON field. This workflow is the mechanism that refreshes webview2.json's
+#   version + sha256 whenever Microsoft ships a new Edge/WebView2 Stable release.
+# - Fail-soft: if discovery/download fails, it simply does nothing (no PR, no error).
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # weekly, Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Explicit WebView2 fixed version to pin (e.g. 151.0.4129.78). Leave empty to auto-discover the latest Stable.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Determine target version
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          INPUT_VER="${{ github.event.inputs.version || '' }}"
+          if [ -n "$INPUT_VER" ]; then
+            echo "version=$INPUT_VER" >> "$GITHUB_OUTPUT"
+            echo "Using explicit version: $INPUT_VER"
+            exit 0
+          fi
+          echo "Discovering latest Edge/WebView2 Stable version from edgeupdates.microsoft.com ..."
+          VER=$(curl -fsSL "https://edgeupdates.microsoft.com/api/products" \
+                | jq -r '.[] | select(.Product=="Stable") | .Releases[] | select(.Platform=="Windows" and .Architecture=="x64") | .ProductVersion' \
+                | head -1 || true)
+          if [ -z "$VER" ]; then
+            echo "::warning::Could not determine the latest WebView2 version; skipping sync."
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Latest discovered version: $VER"
+
+      - name: Compare with pinned version
+        id: compare
+        if: ${{ steps.target.outputs.version != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CUR=$(jq -r '.version // ""' webview2.json)
+          NEW="${{ steps.target.outputs.version }}"
+          echo "current=$CUR new=$NEW"
+          if [ "$CUR" = "$NEW" ]; then
+            echo "::notice::webview2.json already pinned to $NEW - nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download CAB and compute sha256
+        id: fetch
+        if: ${{ steps.compare.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${{ steps.target.outputs.version }}"
+          ARCH=$(jq -r '.arch // "x64"' webview2.json)
+          TPL=$(jq -r '.downloadUrlTemplate // ""' webview2.json)
+          if [ -z "$TPL" ]; then
+            echo "::error::webview2.json missing downloadUrlTemplate"
+            exit 1
+          fi
+          URL="${TPL//\{version\}/$VER}"
+          URL="${URL//\{arch\}/$ARCH}"
+          echo "Downloading $URL"
+          CAB="$RUNNER_TEMP/webview2.cab"
+          if ! curl -fsSL "$URL" -o "$CAB"; then
+            echo "::warning::Failed to download $URL; skipping sync."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SHA=$(sha256sum "$CAB" | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update webview2.json and open PR
+        if: ${{ steps.fetch.outputs.ok == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.target.outputs.version }}
+          SHA: ${{ steps.fetch.outputs.sha256 }}
+          URL: ${{ steps.fetch.outputs.url }}
+        run: |
+          set -euo pipefail
+          ARCH=$(jq -r '.arch // "x64"' webview2.json)
+          jq --arg v "$VER" --arg s "$SHA" --arg u "$URL" --arg a "$ARCH" \
+            '.version=$v | .sha256=$s | .downloadUrl=$u | .arch=$a' \
+            webview2.json > webview2.json.tmp
+          mv webview2.json.tmp webview2.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/webview2-runtime-v${VER}"
+          git checkout -b "$BRANCH"
+          git add webview2.json
+          git commit -m "chore(webview2): bump fixed runtime to ${VER}"
+          git push -f origin "$BRANCH"
+
+          COUNT=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::notice::An open PR already exists for $BRANCH - leaving it as is."
+            exit 0
+          fi
+          DEFAULT="${{ github.event.repository.default_branch }}"
+          gh pr create \
+            --title "chore(webview2): bump fixed runtime to ${VER}" \
+            --base "$DEFAULT" \
+            --body "Automated bump of the pinned fixed WebView2 runtime to **${VER}** (${ARCH}).
+
+          - \`version\`: ${VER}
+          - \`sha256\`: \`${SHA}\`
+
+          This keeps the offline portable package's WebView2 hash in sync with the upstream Microsoft Edge/WebView2 Stable release. Merge to apply.
+
+          _Generated by the Sync WebView2 Runtime workflow._"
+
+      - name: No change
+        if: ${{ steps.target.outputs.version == '' || steps.compare.outputs.changed == 'false' }}
+        shell: bash
+        run: echo "No WebView2 runtime update required."

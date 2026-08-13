@@ -1,3 +1,15 @@
+> ⚠️ **本文档已过时** —— 与当前 `.github/workflows/*.yml` 实际状态不符。最后校订：2026-08-13。
+> 以下关键断言已被实际配置推翻，请勿据此维护：
+> 1. 「release.yml 的 `releaseBody` 仍是字面 `X.Y.Z`」—— **已修复**：现用 `${{ steps.ver.outputs.version }}` 动态变量。
+> 2. 「release.yml 缺少 tag↔`tauri.conf.json` 版本校验」—— **已修复**：已加 `Verify tag version matches tauri.conf.json` 步骤。
+> 3. 「ci.yml 缺少三处版本一致性校验」—— **已修复**：frontend job 已有 `Verify version sync`。
+> 4. 「安装包文件名应为 `游戏体力计时器_...`」—— **错误**：`tauri.conf.json` 的 `productName` 实为 `Game Stamina Timer`，故 `Game Stamina Timer_${{ steps.ver.outputs.version }}_x64-setup.exe` 才正确。
+> 5. 第三方 Action 已锁 SHA（`dtolnay/rust-toolchain`、`tauri-apps/tauri-action` 等），非浮动 tag。
+> 另：`ci.yml` 已追加 `permissions: contents: read` + `concurrency` + `cargo build`（编译兜底）。
+> 权威信息以工作流文件与 CI 分析报告为准。
+>
+> ---
+
 # Releases 配置分析
 
 > 仓库：`Stonebrooke/game-stamina-timer`

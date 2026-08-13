@@ -6,17 +6,26 @@ on:
   pull_request:
     branches: [main, master]
 
+# Least-privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     name: Frontend lint / type-check / test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version: 22.x
           cache: npm
 
       - name: Install dependencies
@@ -38,16 +47,16 @@ jobs:
         run: npm run build
 
   rust:
-    name: Rust fmt / clippy / test
+    name: Rust fmt / clippy / build / test
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./src-tauri
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
           components: clippy, rustfmt
 
@@ -57,7 +66,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/registry
@@ -73,5 +82,24 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Build Tauri binary (compile-only canary)
+        run: cargo build
+
       - name: Run Rust tests
         run: cargo test
+
+  actionlint:
+    name: Lint workflow files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Download actionlint
+        id: get_actionlint
+        shell: bash
+        env:
+          ACTIONLINT_VERSION: v1.7.12
+        run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash)
+
+      - name: Run actionlint
+        run: ${{ steps.get_actionlint.outputs.executable }} -color
