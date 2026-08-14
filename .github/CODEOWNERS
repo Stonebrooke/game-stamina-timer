@@ -1,0 +1,15 @@
+# CODEOWNERS — 项目级代码所有者
+# 语法：<路径模式> @owner1 @owner2
+# 任意 PR 修改匹配路径时，指定 owner 会被自动请求评审。
+
+# 全仓默认所有者
+* @Stonebrooke
+
+# CI / 发布工作流
+/.github/ @Stonebrooke
+
+# Tauri / Rust 后端
+/src-tauri/ @Stonebrooke
+
+# 前端源码
+/src/ @Stonebrooke
