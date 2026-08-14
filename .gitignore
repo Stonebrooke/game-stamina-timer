@@ -30,6 +30,9 @@ src-tauri/gen/
 # ---------- 项目工具 / 沙箱内部数据（绝不可提交） ----------
 .workbuddy/
 
+# ---------- 上游/工具误提交产生的临时目录（PR #1 遗留，勿提交） ----------
+.trae-html-share-packages/
+
 # ---------- Python（scripts/ 下的脚本） ----------
 __pycache__/
 *.pyc
