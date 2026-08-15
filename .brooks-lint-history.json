@@ -1,0 +1,9 @@
+[
+  {
+    "date": "2026-08-13",
+    "mode": "Health Dashboard",
+    "score": 79,
+    "findings": { "critical": 2, "warning": 5, "suggestion": 0 },
+    "scope": "Entire project (src/, src-tauri/src/, .github/workflows/)"
+  }
+]
