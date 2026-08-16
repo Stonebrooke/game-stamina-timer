@@ -20,11 +20,9 @@ use tauri_plugin_notification::NotificationExt;
 /// 不依赖前端 webview tick —— 解决窗口隐藏后 WebView2 节流导致通知延迟的问题。
 /// 去重游标（notified_up_to / full_notified）与前端原逻辑一致，保证只发一次。
 ///
-/// 临界区纪律（架构审查 ①）：持锁期间**只做**内存决策 + 改写游标 + 经
-/// `mutate_if` 落盘（本地 fsync，ms 级；save 失败自动回滚游标并丢弃本轮
-/// 通知——架构审查 R2，宁可 30s 后重试，不可内存/磁盘分歧导致重启后重复弹），
-/// **绝不**在锁内调用 `show()`（Windows Toast / COM I/O，可阻塞数十~数百 ms）。
-/// `show()` 在释放锁后执行，使通知弹出与用户命令彻底解耦——
+/// 临界区纪律（架构审查 ①）：持锁期间**只做**内存决策 + 改写游标 + 一次 `save()`
+/// （本地 fsync，ms 级），**绝不**在锁内调用 `show()`（Windows Toast / COM I/O，可阻塞
+/// 数十~数百 ms）。`show()` 在释放锁后执行，使通知弹出与用户命令彻底解耦——
 /// 否则全局唯一锁被通知 I/O 占住时，所有 `add/update/delete/import` 会被串行阻塞（UI 冻结）。
 fn notification_loop(handle: tauri::AppHandle) {
     use crate::timer::notification_due;
@@ -35,55 +33,48 @@ fn notification_loop(handle: tauri::AppHandle) {
         let now = crate::timer::now_ms();
         let store = handle.state::<SharedStore>();
 
-        // 1) 持锁（写锁）：决策 + 改写游标 + 落盘，全部收口 mutate_if（架构审查 R2）：
-        //    仅 dirty 时落盘；save 失败自动回滚内存游标 → 本轮通知作废，
-        //    下一轮（30s 后）用旧游标重算重试。若不回滚，会出现「内存游标已推进
-        //    但磁盘未落盘」，重启后从旧游标重算 → 已过的里程碑重复弹通知。
+        // 1) 持锁（写锁）：仅决策 + 改写游标 + 落盘；临界区无外部 I/O 副作用
         let pending: Vec<(String, String)> = {
             let mut guard = match store.write() {
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            match guard.mutate_if(|file| {
-                let mut out: Vec<(String, String)> = Vec::new();
-                for t in file.timers.iter_mut() {
-                    match notification_due(t, now) {
-                        None => continue,
-                        Some((full, latest)) => {
-                            let title = if full {
-                                "体力已回满".to_string()
-                            } else {
-                                "体力恢复提醒".to_string()
-                            };
-                            let body = if full {
-                                format!(
-                                    "{} 体力已回满 {}/{}",
-                                    t.name, t.max_stamina as i64, t.max_stamina as i64
-                                )
-                            } else {
-                                format!("{} 体力已恢复到 {} 点", t.name, latest as i64)
-                            };
-                            // 应用去重游标（与前端原逻辑一致）
-                            if full {
-                                t.full_notified = true;
-                                t.notified_up_to = t.max_stamina;
-                            } else {
-                                t.notified_up_to = latest;
-                                t.full_notified = full || t.full_notified;
-                            }
-                            out.push((title, body));
+            let mut out = Vec::new();
+            let mut dirty = false;
+            for t in guard.file.timers.iter_mut() {
+                match notification_due(t, now) {
+                    None => continue,
+                    Some((full, latest)) => {
+                        let title = if full {
+                            "体力已回满".to_string()
+                        } else {
+                            "体力恢复提醒".to_string()
+                        };
+                        let body = if full {
+                            format!(
+                                "{} 体力已回满 {}/{}",
+                                t.name, t.max_stamina as i64, t.max_stamina as i64
+                            )
+                        } else {
+                            format!("{} 体力已恢复到 {} 点", t.name, latest as i64)
+                        };
+                        // 应用去重游标（与前端原逻辑一致）
+                        if full {
+                            t.full_notified = true;
+                            t.notified_up_to = t.max_stamina;
+                        } else {
+                            t.notified_up_to = latest;
+                            t.full_notified = full || t.full_notified;
                         }
+                        out.push((title, body));
+                        dirty = true;
                     }
                 }
-                if out.is_empty() { None } else { Some(out) }
-            }) {
-                Ok(Some(out)) => out,
-                Ok(None) => Vec::new(),
-                Err(e) => {
-                    eprintln!("[notify] 游标落盘失败，已回滚，本轮通知丢弃待下轮重试: {e}");
-                    Vec::new()
-                }
             }
+            if dirty {
+                let _ = guard.save();
+            }
+            out
         }; // ← 写锁在此释放
 
         // 2) 无锁：弹系统通知（纯副作用，不碰共享状态，不阻塞任何用户命令）

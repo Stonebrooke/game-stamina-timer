@@ -66,27 +66,6 @@ impl TimerStore {
         }
         Ok(())
     }
-
-    /// 条件变更（架构审查 R2）：闭包返回 `Some(payload)` 表示有变更 → 落盘
-    /// （失败回滚内存并返回 Err）；返回 `None` 表示无变更 → 不落盘。
-    /// 供通知线程把「仅 dirty 时落盘 + 失败回滚」收进存储层，
-    /// 与 `mutate` 共享同一套内存/磁盘一致性契约。
-    pub fn mutate_if<T, F>(&mut self, f: F) -> Result<Option<T>, String>
-    where
-        F: FnOnce(&mut TimersFile) -> Option<T>,
-    {
-        let backup = self.file.clone();
-        match f(&mut self.file) {
-            Some(payload) => {
-                if let Err(e) = self.save() {
-                    self.file = backup; // 落盘失败：回滚内存
-                    return Err(e);
-                }
-                Ok(Some(payload))
-            }
-            None => Ok(None), // 无变更：不落盘
-        }
-    }
 }
 
 #[cfg(test)]
@@ -161,56 +140,5 @@ mod tests {
         let (store, warn) = TimerStore::load(path);
         assert!(store.file.timers.is_empty());
         assert!(warn.is_none());
-    }
-
-    #[test]
-    fn mutate_if_skips_save_when_unchanged() {
-        // 路径父目录不存在：若无变更仍误落盘会返回 Err；None 必须不触发 save
-        let bad_dir = std::env::temp_dir().join(format!(
-            "stamina-nonexistent-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let mut store = TimerStore {
-            path: bad_dir.join("timers.json"),
-            file: TimersFile::empty(),
-        };
-        let r = store.mutate_if(|_f| None::<()>).expect("无变更不应报错");
-        assert!(r.is_none());
-    }
-
-    #[test]
-    fn mutate_if_rolls_back_on_save_failure() {
-        let bad_dir = std::env::temp_dir().join(format!(
-            "stamina-nonexistent-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let mut store = TimerStore {
-            path: bad_dir.join("timers.json"),
-            file: TimersFile::empty(),
-        };
-        store.file.timers.push(sample());
-        let before = store.file.timers.len();
-        let res = store.mutate_if(|f| {
-            f.timers.push(sample());
-            Some("payload")
-        });
-        assert!(res.is_err(), "save 失败应返回 Err");
-        assert_eq!(store.file.timers.len(), before, "内存须回滚到变更前");
-    }
-
-    #[test]
-    fn mutate_if_persists_and_returns_payload_on_success() {
-        let path = temp_path("mutate-if-ok");
-        let mut store = TimerStore::load(path.clone()).0;
-        let res = store
-            .mutate_if(|f| {
-                f.timers.push(sample());
-                Some(42)
-            })
-            .expect("save 成功");
-        assert_eq!(res, Some(42), "成功时应透传闭包 payload");
-        let reloaded = TimerStore::load(path.clone()).0;
-        assert_eq!(reloaded.file.timers.len(), 1, "变更应已落盘");
-        let _ = std::fs::remove_file(&path);
     }
 }
