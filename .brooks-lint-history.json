@@ -12,5 +12,12 @@
     "score": 74,
     "findings": { "critical": 1, "warning": 2, "suggestion": 1 },
     "scope": "PR #17 (trae/agent-YiIMQ7): net +.brooks-lint-history.json vs merge-base; branch on pre-rewrite history, no merge base with current master"
+  },
+  {
+    "date": "2026-08-17",
+    "mode": "Health Dashboard",
+    "score": 94,
+    "findings": { "critical": 0, "warning": 4, "suggestion": 1 },
+    "scope": "origin/master @ 6af8279 (post PR #18 governance chain), reviewed via detached worktree"
   }
 ]
