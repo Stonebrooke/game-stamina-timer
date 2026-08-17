@@ -33,8 +33,6 @@ const tauriApi = {
   deleteTimer: (id: string) => invoke<void>("delete_timer", { id }),
   anchorTimer: (id: string, currentStamina: number) =>
     invoke<StaminaTimer>("anchor_timer", { id, currentStamina }),
-  markNotified: (id: string, notifiedUpTo: number, fullNotified: boolean) =>
-    invoke<void>("mark_notified", { id, notifiedUpTo, fullNotified }),
   /** 导出到用户选择的路径；取消返回 null，成功返回路径 */
   exportTimers: async (): Promise<string | null> => {
     const path = await save({ filters: JSON_FILTERS, defaultPath: "stamina-timers.json" });
@@ -127,14 +125,6 @@ const mockApi = {
     t.fullNotified = false;
     mockWrite(file);
     return t;
-  },
-  async markNotified(id: string, notifiedUpTo: number, fullNotified: boolean): Promise<void> {
-    const file = mockRead();
-    const t = file.timers.find(t => t.id === id);
-    if (!t) return;
-    t.notifiedUpTo = Math.min(notifiedUpTo, t.maxStamina);
-    t.fullNotified = fullNotified;
-    mockWrite(file);
   },
   /** 浏览器降级：Blob 下载导出 */
   async exportTimers(): Promise<string | null> {

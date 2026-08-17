@@ -160,28 +160,6 @@ pub fn delete_timer(store: State<SharedStore>, id: String) -> Result<(), String>
     })
 }
 
-/// 通知状态落盘：前端/后端通知线程触发通知后回写（去重依据）
-#[tauri::command]
-pub fn mark_notified(
-    store: State<SharedStore>,
-    id: String,
-    notified_up_to: f64,
-    full_notified: bool,
-) -> Result<(), String> {
-    trace_cmd!("mark_notified");
-    let mut guard = write_lock(&store)?;
-    guard.mutate(|f| {
-        let t = f
-            .timers
-            .iter_mut()
-            .find(|x| x.id == id)
-            .ok_or_else(|| "计时器不存在".to_string())?;
-        t.notified_up_to = notified_up_to.min(t.max_stamina);
-        t.full_notified = full_notified;
-        Ok(())
-    })
-}
-
 /// 设为当前：写锚点并重置通知周期
 #[tauri::command]
 pub fn anchor_timer(
@@ -201,7 +179,7 @@ pub fn anchor_timer(
     if !(0.0..=max).contains(&current_stamina) {
         return Err(format!("当前体力必须在 0-{max} 之间"));
     }
-    guard.mutate(|f| {
+    let out = guard.mutate(|f| {
         let t = f
             .timers
             .iter_mut()
@@ -211,15 +189,8 @@ pub fn anchor_timer(
         t.last_update_ts = now_ms();
         t.notified_up_to = current_stamina;
         t.full_notified = false;
-        Ok(())
+        Ok(t.clone())
     })?;
-    let out = guard
-        .file
-        .timers
-        .iter()
-        .find(|t| t.id == id)
-        .cloned()
-        .ok_or_else(|| "计时器不存在".to_string())?;
     Ok(out)
 }
 

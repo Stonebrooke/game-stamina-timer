@@ -4,12 +4,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useTimers } from "./useTimers";
 import type { StaminaTimer } from "../lib/types";
 
-const mockMarkNotified = vi.fn(async () => {});
-
 vi.mock("../api/timers", () => ({
   inTauri: () => false,
   api: () => ({
-    markNotified: mockMarkNotified,
     listTimers: vi.fn(async () => []),
     addTimer: vi.fn(),
     updateTimer: vi.fn(),
@@ -37,7 +34,6 @@ function sampleTimer(): StaminaTimer {
 
 describe("useTimers.tick (UI 刷新，通知已下沉后端)", () => {
   beforeEach(() => {
-    mockMarkNotified.mockClear();
     useTimers.setState({ timers: [], now: 0, loading: false, error: null });
   });
 
@@ -45,7 +41,7 @@ describe("useTimers.tick (UI 刷新，通知已下沉后端)", () => {
     useTimers.setState({ timers: [sampleTimer()] });
     useTimers.getState().tick();
     expect(useTimers.getState().now).toBeGreaterThan(0);
-    expect(mockMarkNotified).not.toHaveBeenCalled(); // 通知归后端线程
+    // 通知归后端线程，前端不写 markNotified
   });
 
   it("loaded timers 进入 state 且不触发通知", async () => {
@@ -53,6 +49,5 @@ describe("useTimers.tick (UI 刷新，通知已下沉后端)", () => {
     await useTimers.getState().load();
     expect(useTimers.getState().timers).toEqual([]);
     expect(useTimers.getState().error).toBeNull();
-    expect(mockMarkNotified).not.toHaveBeenCalled();
   });
 });

@@ -5,14 +5,15 @@ mod commands;
 mod store;
 mod timer;
 
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 
 use commands::SharedStore;
 use store::TimerStore;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
+    Manager, RunEvent, WindowEvent,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -20,59 +21,73 @@ use tauri_plugin_notification::NotificationExt;
 /// 不依赖前端 webview tick —— 解决窗口隐藏后 WebView2 节流导致通知延迟的问题。
 /// 去重游标（notified_up_to / full_notified）与前端原逻辑一致，保证只发一次。
 ///
-/// 临界区纪律（架构审查 ①）：持锁期间**只做**内存决策 + 改写游标 + 一次 `save()`
-/// （本地 fsync，ms 级），**绝不**在锁内调用 `show()`（Windows Toast / COM I/O，可阻塞
-/// 数十~数百 ms）。`show()` 在释放锁后执行，使通知弹出与用户命令彻底解耦——
+/// 临界区纪律（架构审查 ①）：持锁期间**只做**内存决策 + 改写游标，
+/// 通过 `mutate_if` 统一落盘（有变更才写，临界区无外部 I/O 副作用）。
+/// `show()` 在释放锁后执行，使通知弹出与用户命令彻底解耦——
 /// 否则全局唯一锁被通知 I/O 占住时，所有 `add/update/delete/import` 会被串行阻塞（UI 冻结）。
-fn notification_loop(handle: tauri::AppHandle) {
+///
+/// R2 修复：游标改写收口进 `mutate_if`，落盘失败自动回滚内存——
+/// 绝不弹未持久化的通知（避免重启后重复通知）。
+fn notification_loop(handle: tauri::AppHandle, shutdown: Arc<AtomicBool>) {
     use crate::timer::notification_due;
     use std::time::Duration;
 
     loop {
-        std::thread::sleep(Duration::from_secs(30));
+        // 分段睡眠合计 30s，每 1s 检查关闭标志，保证 ExitRequested 后 1s 内退出（P2-6）
+        for _ in 0..30 {
+            if shutdown.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
         let now = crate::timer::now_ms();
         let store = handle.state::<SharedStore>();
 
-        // 1) 持锁（写锁）：仅决策 + 改写游标 + 落盘；临界区无外部 I/O 副作用
+        // 1) 持锁（写锁）：仅决策 + 改写游标；有变更才走 mutate_if 落盘（临界区无外部 I/O）。
+        //    落盘失败自动回滚内存——绝不弹未持久化的通知（R2 修复）。
         let pending: Vec<(String, String)> = {
             let mut guard = match store.write() {
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
             };
             let mut out = Vec::new();
-            let mut dirty = false;
-            for t in guard.file.timers.iter_mut() {
-                match notification_due(t, now) {
-                    None => continue,
-                    Some((full, latest)) => {
-                        let title = if full {
-                            "体力已回满".to_string()
-                        } else {
-                            "体力恢复提醒".to_string()
-                        };
-                        let body = if full {
-                            format!(
-                                "{} 体力已回满 {}/{}",
-                                t.name, t.max_stamina as i64, t.max_stamina as i64
-                            )
-                        } else {
-                            format!("{} 体力已恢复到 {} 点", t.name, latest as i64)
-                        };
-                        // 应用去重游标（与前端原逻辑一致）
-                        if full {
-                            t.full_notified = true;
-                            t.notified_up_to = t.max_stamina;
-                        } else {
-                            t.notified_up_to = latest;
-                            t.full_notified = full || t.full_notified;
+            let save_res = guard.mutate_if(|f| {
+                let mut dirty = false;
+                for t in f.timers.iter_mut() {
+                    match notification_due(t, now) {
+                        None => continue,
+                        Some((full, latest)) => {
+                            let title = if full {
+                                "体力已回满".to_string()
+                            } else {
+                                "体力恢复提醒".to_string()
+                            };
+                            let body = if full {
+                                format!(
+                                    "{} 体力已回满 {}/{}",
+                                    t.name, t.max_stamina as i64, t.max_stamina as i64
+                                )
+                            } else {
+                                format!("{} 体力已恢复到 {} 点", t.name, latest as i64)
+                            };
+                            // 应用去重游标（与前端原逻辑一致）
+                            if full {
+                                t.full_notified = true;
+                                t.notified_up_to = t.max_stamina;
+                            } else {
+                                t.notified_up_to = latest;
+                                t.full_notified = full || t.full_notified;
+                            }
+                            out.push((title, body));
+                            dirty = true;
                         }
-                        out.push((title, body));
-                        dirty = true;
                     }
                 }
-            }
-            if dirty {
-                let _ = guard.save();
+                dirty
+            });
+            if let Err(e) = save_res {
+                eprintln!("[notify] 游标落盘失败，已回滚，本次通知不弹出: {e}");
+                out.clear();
             }
             out
         }; // ← 写锁在此释放
@@ -92,6 +107,11 @@ fn notification_loop(handle: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 通知线程优雅退出标志：ExitRequested（app.exit / 平台 Quit）置位，
+    // 线程分段睡眠 1s 内感知并 return（P2-6）。
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_setup = Arc::clone(&shutdown);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -99,7 +119,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .setup(|app| {
+        .setup(move |app| {
             // 数据目录与存储
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
@@ -109,10 +129,10 @@ pub fn run() {
             }
             app.manage(RwLock::new(store));
 
-            // 通知判定下沉到独立线程（P1-1）：窗口隐藏后 WebView2 会节流前端 tick，
-            // 故由后端每 30s 轮询直接计算满/里程碑并弹系统通知，不依赖 webview tick。
+            // 通知判定下沉到独立线程（P1-1 + P2-6 优雅退出）
             let handle = app.handle().clone();
-            std::thread::spawn(move || notification_loop(handle));
+            let shutdown = Arc::clone(&shutdown_setup);
+            std::thread::spawn(move || notification_loop(handle, shutdown));
 
             // 托盘菜单：打开 / 退出
             let open = MenuItem::with_id(app, "open", "打开", true, None::<&str>)?;
@@ -165,10 +185,15 @@ pub fn run() {
             commands::update_timer,
             commands::delete_timer,
             commands::anchor_timer,
-            commands::mark_notified,
             commands::export_timers,
             commands::import_timers
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(move |_app, event| {
+            // 收到退出请求（app.exit / 平台 Quit）→ 置位关闭标志，通知线程 1s 内退出（P2-6）
+            if let RunEvent::ExitRequested { .. } = event {
+                shutdown.store(true, Ordering::Relaxed);
+            }
+        });
 }
