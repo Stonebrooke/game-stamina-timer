@@ -5,5 +5,12 @@
     "score": 79,
     "findings": { "critical": 2, "warning": 5, "suggestion": 0 },
     "scope": "Entire project (src/, src-tauri/src/, .github/workflows/)"
+  },
+  {
+    "date": "2026-08-17",
+    "mode": "PR Review",
+    "score": 74,
+    "findings": { "critical": 1, "warning": 2, "suggestion": 1 },
+    "scope": "PR #17 (trae/agent-YiIMQ7): net +.brooks-lint-history.json vs merge-base; branch on pre-rewrite history, no merge base with current master"
   }
 ]
