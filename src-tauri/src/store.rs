@@ -17,6 +17,7 @@ impl TimerStore {
     /// 文件损坏时备份为带时间戳的 .bak 并回退空库（warn=Some(提示)）。
     /// 返回 (Self, Option<String>) —— 调用方据此决定是否告警用户（P1-4）。
     pub fn load(path: PathBuf) -> (Self, Option<String>) {
+        cleanup_old_baks(&path, 5); // 启动时清理过期备份，仅保留最近 5 个（P1-4）
         let (file, warn) = match std::fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str::<TimersFile>(&content) {
                 Ok(f) => (f, None),
@@ -54,17 +55,65 @@ impl TimerStore {
 
     /// 原子变更（P0-2）：先改内存，save 失败则自动回滚，保证内存与磁盘一致。
     /// 所有写命令统一收口于此，避免「先改内存后 save、失败已变」的静默数据丢失。
-    pub fn mutate<F>(&mut self, f: F) -> Result<(), String>
+    pub fn mutate<F, T>(&mut self, f: F) -> Result<T, String>
     where
-        F: FnOnce(&mut TimersFile) -> Result<(), String>,
+        F: FnOnce(&mut TimersFile) -> Result<T, String>,
     {
         let backup = self.file.clone();
-        f(&mut self.file)?; // 业务校验失败：不动内存
+        let out = f(&mut self.file)?; // 业务校验失败：不动内存
+        if let Err(e) = self.save() {
+            self.file = backup; // 落盘失败：回滚内存
+            return Err(e);
+        }
+        Ok(out)
+    }
+
+    /// 条件变更（R2 修复）：与 `mutate` 同回滚契约，但闭包返回 `bool`——
+    /// 仅当 `true`（确有游标推进）才落盘，避免通知线程每 30s 空写磁盘。
+    /// 落盘失败自动回滚内存，保证内存与磁盘一致（绝不弹未持久化的通知）。
+    pub fn mutate_if<F>(&mut self, f: F) -> Result<(), String>
+    where
+        F: FnOnce(&mut TimersFile) -> bool,
+    {
+        let backup = self.file.clone();
+        let changed = f(&mut self.file);
+        if !changed {
+            return Ok(()); // 无变更：不碰磁盘
+        }
         if let Err(e) = self.save() {
             self.file = backup; // 落盘失败：回滚内存
             return Err(e);
         }
         Ok(())
+    }
+}
+
+/// 解析 `.bak.<ts>` 文件名中的时间戳（u128 epoch ms）；非时间戳备份返回 None。
+fn bak_ts(p: &std::path::Path) -> Option<u128> {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|s| s.rsplit(".bak.").next())
+        .and_then(|s| s.parse::<u128>().ok())
+}
+
+/// 保留最近 `keep` 个带时间戳的 `.bak` 备份，删除更早的（P1-4：避免备份无限堆积）
+fn cleanup_old_baks(path: &std::path::Path, keep: usize) {
+    if let Some(dir) = path.parent() {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut baks: Vec<_> = entries
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.contains(".bak."))
+                        .unwrap_or(false)
+                })
+                .collect();
+            baks.sort_by_key(|b| std::cmp::Reverse(bak_ts(b)));
+            for old in baks.into_iter().skip(keep) {
+                let _ = std::fs::remove_file(&old);
+            }
+        }
     }
 }
 

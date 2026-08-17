@@ -53,9 +53,10 @@
 │   ├── icons/              # 全套应用图标（含 android / ios）
 │   ├── capabilities/       # Tauri 权限声明
 │   ├── Cargo.toml / Cargo.lock
-│   ├── tauri.conf.json     # 应用配置（窗口、CSP、打包目标）
-│   └── tauri.build.conf.json
-├── scripts/gen_icon.py     # 图标生成脚本
+│   └── tauri.conf.json     # 应用配置（窗口、CSP、打包目标）
+├── scripts/
+│   ├── gen_icon.py         # 图标生成脚本
+│   └── check-contract.mjs  # 双源契约校验（Rust⇄TS 字段/色板，CI 门禁）
 ├── assets/icon.png         # 源图标
 ├── index.html
 ├── package.json            # 前端依赖与脚本
@@ -118,7 +119,7 @@ src-tauri/target/release/bundle/nsis/游戏体力计时器_0.2.1_x64-setup.exe
 | 层 | 命令 | 覆盖 |
 |----|------|------|
 | 前端 | `npm run test` | 计时纯函数、脏数据防御、store 契约（36 用例） |
-| 后端 | `cargo test`（在 `src-tauri/` 下） | 校验、通知去重、原子写回滚、重锚逻辑（19 用例） |
+| 后端 | `cargo test`（在 `src-tauri/` 下） | 校验、通知去重、原子写回滚、重锚逻辑、配色校验（21 用例） |
 
 ---
 

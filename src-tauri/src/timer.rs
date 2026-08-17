@@ -2,6 +2,23 @@
 //! 修改字段时必须同步 TS 侧。
 use serde::{Deserialize, Serialize};
 
+/// 卡片可选配色池（与前端 `src/lib/presets.ts` 的 COLOR_POOL 一一对应，共 17 色）。
+/// 计时器配色必须取自本池，防止脏数据写入任意 hex 导致 UI 串色 / 解析异常（P1-5）。
+pub const TIMER_COLORS: &[&str] = &[
+    "#ef4444", "#e8a33d", "#facc15", "#e86a92", "#4a9eff", "#0ea5e9", "#7c5cff", "#3dc8c0",
+    "#6bbf59", "#10b981", "#8a9199", "#64748b", "#a8a29e", "#c4b5fd", "#fda4af", "#7dd3fc",
+    "#86efac",
+];
+
+/// 配色校验：必须为内置色板成员（P1-5）
+pub fn validate_color(c: &str) -> Result<(), String> {
+    if TIMER_COLORS.contains(&c) {
+        Ok(())
+    } else {
+        Err(format!("配色必须为内置色板之一，收到: {c}"))
+    }
+}
+
 /// 体力计时器（持久化实体）
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -60,6 +77,7 @@ fn validate_common(
     max_stamina: f64,
     current_stamina: f64,
     notify_every_n: f64,
+    color: &str,
 ) -> Result<(), String> {
     if name.trim().is_empty() || name.chars().count() > 50 {
         return Err("名称不能为空且不超过 50 字".into());
@@ -77,6 +95,7 @@ fn validate_common(
     if !notify_every_n.is_finite() || notify_every_n < 0.0 {
         return Err("每 N 点提醒不能为负".into());
     }
+    validate_color(color)?; // 配色须取自固定池（P1-5）
     Ok(())
 }
 
@@ -87,6 +106,7 @@ pub fn validate_new(t: &NewTimer) -> Result<(), String> {
         t.max_stamina,
         t.current_stamina,
         t.notify_every_n,
+        &t.color,
     )
 }
 
@@ -97,6 +117,7 @@ pub fn validate_timer(t: &StaminaTimer) -> Result<(), String> {
         t.max_stamina,
         t.current_stamina,
         t.notify_every_n,
+        &t.color,
     )?;
     if !t.notified_up_to.is_finite() || t.notified_up_to < 0.0 {
         return Err("notifiedUpTo 必须为 >= 0 的有限值".into());
@@ -283,5 +304,21 @@ mod tests {
         t.full_notified = true;
         t.notified_up_to = t.max_stamina;
         assert!(notification_due(&t, now).is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_color() {
+        let mut t = valid();
+        t.color = "#000000".into();
+        assert!(validate_timer(&t).is_err());
+    }
+
+    #[test]
+    fn color_must_be_pool_member() {
+        for c in super::TIMER_COLORS {
+            let mut t = valid();
+            t.color = c.to_string();
+            assert!(validate_timer(&t).is_ok(), "色板成员应校验通过: {c}");
+        }
     }
 }

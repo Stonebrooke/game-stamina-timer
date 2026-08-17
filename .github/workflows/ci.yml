@@ -107,3 +107,19 @@ jobs:
         with:
           version: v1.7.12
           fail-on-error: true
+
+  # 双源契约校验（P1-3）：Rust timer.rs ⇄ TS types.ts 字段 + 色板一致性。
+  # 任何一侧改字段/色板而不同步另一侧，此 job 直接 fail，阻断漂移。
+  contract:
+    name: Dual-source contract check (Rust ⇄ TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.x
+
+      - name: Verify Rust⇄TS contract (fields + color pool)
+        run: node scripts/check-contract.mjs
