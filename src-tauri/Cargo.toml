@@ -1,7 +1,7 @@
 [package]
 name = "stamina-timer"
 version = "0.3.0"
-description = "游戏体力恢复计时�?�?基于时间戳的被动式多游戏体力追踪"
+description = "游戏体力恢复计时器 — 基于时间戳的被动式多游戏体力追踪"
 edition = "2021"
 
 [lib]
