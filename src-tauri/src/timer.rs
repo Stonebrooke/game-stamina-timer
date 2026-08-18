@@ -203,7 +203,8 @@ mod tests {
     }
 
     fn baseline_timer() -> StaminaTimer {
-        let t = &fixtures_json()["formulaSamples"][0]["timer"];
+        let fixtures = fixtures_json();
+        let t = &fixtures["formulaSamples"][0]["timer"];
         StaminaTimer {
             id: "t1".into(),
             name: "测试游戏".into(),
@@ -275,7 +276,8 @@ mod tests {
     fn current_stamina_matches_ts_formula() {
         // 公式契约来自 contracts/contract-fixtures.json（R3：双端共享单一真源，不再各写一套）
         let t = valid();
-        let cases = fixtures_json()["formulaSamples"][0]["currentCases"]
+        let fixtures = fixtures_json();
+        let cases = fixtures["formulaSamples"][0]["currentCases"]
             .as_array()
             .expect("currentCases 应为数组");
         for c in cases {
@@ -304,7 +306,8 @@ mod tests {
     fn pending_milestones_relative_to_anchor() {
         // 里程碑契约来自 contract-fixtures.json（R3：与 TS 端同源，单一真源）
         let t = valid();
-        let pm = &fixtures_json()["formulaSamples"][0]["pendingMilestones"];
+        let fixtures = fixtures_json();
+        let pm = &fixtures["formulaSamples"][0]["pendingMilestones"];
         let off = pm["nowOffsetMs"].as_i64().expect("nowOffsetMs");
         let expected: Vec<f64> = pm["expected"]
             .as_array()
