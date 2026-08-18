@@ -40,5 +40,12 @@
     "score": 95,
     "findings": { "critical": 0, "warning": 0, "suggestion": 1 },
     "scope": "PR #21 复核修正：CI run 32114435447 conclusion=success（4 job 全绿含 Rust test）；上轮 'CI 未跑' Warning 撤销（假阳性，根因是 actions/runs?head_sha= 短SHA 假阴性）"
+  },
+  {
+    "date": "2026-08-18",
+    "mode": "PR Review",
+    "score": 90,
+    "findings": { "critical": 0, "warning": 1, "suggestion": 1 },
+    "scope": "PR #20 (fix/p2-5-single-instance-order): 1 commit, lib.rs 插件注册顺序重排; 69a5126 是 PR21 祖先，CI 已由 run 32114435447 覆盖; 本地 36 tests + lint + build + contract 全绿"
   }
 ]
