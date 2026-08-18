@@ -194,21 +194,34 @@ pub fn notification_due(t: &StaminaTimer, now: i64) -> Option<(bool, f64)> {
 mod tests {
     use super::*;
 
-    fn valid() -> StaminaTimer {
+    /// 从 contracts/contract-fixtures.json 读取 baseline timer（与 TS 端 makeTimer 同源，
+    /// 消除双端 fixture 默认值重复，T3 收口）。fixture 仅含公式相关字段；
+    /// id/name/full_notified/created_at 等非公式字段在双端各自以固定值补齐。
+    fn fixtures_json() -> serde_json::Value {
+        let raw = include_str!("../../contracts/contract-fixtures.json");
+        serde_json::from_str(raw).expect("contract-fixtures.json 解析失败")
+    }
+
+    fn baseline_timer() -> StaminaTimer {
+        let t = &fixtures_json()["formulaSamples"][0]["timer"];
         StaminaTimer {
             id: "t1".into(),
             name: "测试游戏".into(),
-            recover_ms_per_point: 360_000.0,
-            max_stamina: 240.0,
-            current_stamina: 100.0,
-            last_update_ts: 1_000_000,
-            notify_on_full: true,
-            notify_every_n: 20.0,
-            notified_up_to: 100.0,
+            recover_ms_per_point: t["recoverMsPerPoint"].as_f64().expect("recoverMsPerPoint"),
+            max_stamina: t["maxStamina"].as_f64().expect("maxStamina"),
+            current_stamina: t["currentStamina"].as_f64().expect("currentStamina"),
+            last_update_ts: t["lastUpdateTs"].as_i64().expect("lastUpdateTs"),
+            notify_on_full: t["notifyOnFull"].as_bool().expect("notifyOnFull"),
+            notify_every_n: t["notifyEveryN"].as_f64().expect("notifyEveryN"),
+            notified_up_to: t["notifiedUpTo"].as_f64().expect("notifiedUpTo"),
             full_notified: false,
-            color: "#4a9eff".into(),
+            color: t["color"].as_str().expect("color").to_string(),
             created_at: 0,
         }
+    }
+
+    fn valid() -> StaminaTimer {
+        baseline_timer()
     }
 
     #[test]
@@ -260,16 +273,20 @@ mod tests {
 
     #[test]
     fn current_stamina_matches_ts_formula() {
+        // 公式契约来自 contracts/contract-fixtures.json（R3：双端共享单一真源，不再各写一套）
         let t = valid();
-        // 锚定 100，6min/点，1h 后 +10
-        assert_eq!(current_stamina_of(&t, t.last_update_ts + 3_600_000), 110.0);
-        // 时钟回拨按 0
-        assert_eq!(current_stamina_of(&t, t.last_update_ts - 999_999), 100.0);
-        // 封顶
-        assert_eq!(
-            current_stamina_of(&t, t.last_update_ts + 999_999_999_999),
-            240.0
-        );
+        let cases = fixtures_json()["formulaSamples"][0]["currentCases"]
+            .as_array()
+            .expect("currentCases 应为数组");
+        for c in cases {
+            let off = c["nowOffsetMs"].as_i64().expect("nowOffsetMs");
+            let expected = c["expected"].as_f64().expect("expected");
+            assert_eq!(
+                current_stamina_of(&t, t.last_update_ts + off),
+                expected,
+                "公式契约用例 nowOffsetMs={off} 不符"
+            );
+        }
     }
 
     #[test]
@@ -285,11 +302,17 @@ mod tests {
 
     #[test]
     fn pending_milestones_relative_to_anchor() {
-        let t = valid(); // 锚 100, N=20
-        assert_eq!(
-            pending_milestones(&t, t.last_update_ts + 8 * 3_600_000),
-            vec![120.0, 140.0, 160.0, 180.0]
-        );
+        // 里程碑契约来自 contract-fixtures.json（R3：与 TS 端同源，单一真源）
+        let t = valid();
+        let pm = &fixtures_json()["formulaSamples"][0]["pendingMilestones"];
+        let off = pm["nowOffsetMs"].as_i64().expect("nowOffsetMs");
+        let expected: Vec<f64> = pm["expected"]
+            .as_array()
+            .expect("expected 应为数组")
+            .iter()
+            .map(|x| x.as_f64().expect("expected 元素"))
+            .collect();
+        assert_eq!(pending_milestones(&t, t.last_update_ts + off), expected);
     }
 
     #[test]

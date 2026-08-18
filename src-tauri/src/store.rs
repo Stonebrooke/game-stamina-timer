@@ -190,4 +190,30 @@ mod tests {
         assert!(store.file.timers.is_empty());
         assert!(warn.is_none());
     }
+
+    /// T5：mutate_if 落盘失败应自动回滚内存（R2 修复核心 —— 绝不持久化未落盘的通知态）。
+    /// 让 path 的中间目录不存在，使 save() 的 File::create(tmp) 必然失败（父目录缺失）。
+    /// 注意：不能靠「.json.tmp 目录」触发，因为 Path::with_extension 会改写扩展名段导致 tmp 路径变化。
+    #[test]
+    fn mutate_if_rolls_back_on_save_failure() {
+        let path = std::env::temp_dir().join(format!(
+            "stamina-mutate-fail-{}/timers.json",
+            uuid::Uuid::new_v4()
+        )); // 中间目录不存在 → save 的 tmp 父目录缺失 → 写入失败
+        let mut store = TimerStore {
+            path,
+            file: TimersFile::empty(),
+        };
+        store.file.timers.push(sample()); // 基线 1 条
+        assert_eq!(store.file.timers.len(), 1);
+
+        let res = store.mutate_if(|f| {
+            f.timers.push(sample()); // 闭包内篡改内存
+            true // 标记有变更，触发 save（必然失败）
+        });
+
+        assert!(res.is_err(), "save 失败应返回 Err");
+        // 回滚：内存未被闭包改动，仍是基线 1 条
+        assert_eq!(store.file.timers.len(), 1, "落盘失败必须回滚内存");
+    }
 }
