@@ -26,5 +26,12 @@
     "score": 95,
     "findings": { "critical": 0, "warning": 4, "suggestion": 1 },
     "scope": "origin/master @ 6cddd53 (post PR #19 single-instance), tests executed locally (frontend 36/36, lint, build) + CI green"
+  },
+  {
+    "date": "2026-08-18",
+    "mode": "PR Review",
+    "score": 92,
+    "findings": { "critical": 0, "warning": 1, "suggestion": 1 },
+    "scope": "PR #21 (fix/contract-fixtures): R3/T3/T5 收口 + P2-5 单实例顺序修复; 37 tests + contract + lint + build all green locally"
   }
 ]
