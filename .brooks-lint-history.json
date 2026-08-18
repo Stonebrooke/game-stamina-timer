@@ -47,5 +47,12 @@
     "score": 90,
     "findings": { "critical": 0, "warning": 1, "suggestion": 1 },
     "scope": "PR #20 (fix/p2-5-single-instance-order): 1 commit, lib.rs 插件注册顺序重排; 69a5126 是 PR21 祖先，CI 已由 run 32114435447 覆盖; 本地 36 tests + lint + build + contract 全绿"
+  },
+  {
+    "date": "2026-08-18",
+    "mode": "Health Dashboard",
+    "score": 97,
+    "findings": { "critical": 0, "warning": 0, "suggestion": 2 },
+    "scope": "origin/master @ 4825f64 (post PR #21 合并): 前轮 4 条 Warning 全部核销; 本地 37 tests + lint + build + contract 全绿; CI 由 PR #21 run 32114435447 覆盖"
   }
 ]
