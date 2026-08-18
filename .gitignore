@@ -29,6 +29,8 @@ src-tauri/gen/
 
 # ---------- 项目工具 / 沙箱内部数据（绝不可提交） ----------
 .workbuddy/
+# Brooks-Lint 工具链本地历史（PR #17 已关，但同类工具文件下次还会被带入）
+.brooks-lint-history.json
 
 # ---------- 上游/工具误提交产生的临时目录（PR #1 遗留，勿提交） ----------
 .trae-html-share-packages/

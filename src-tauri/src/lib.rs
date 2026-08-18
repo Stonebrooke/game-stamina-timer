@@ -113,14 +113,11 @@ pub fn run() {
     let shutdown_setup = Arc::clone(&shutdown);
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // 已存在实例时：唤起并聚焦已有主窗口，新进程随后由插件退出（P2-5 单实例保护）
+            // 必须第一个注册：插件 setup 按注册顺序执行，单实例在此检查互斥体并立即退出第二实例；
+            // 若排在后，第二实例会先初始化 notification/dialog/autostart 再退出，导致托盘图标闪现、
+            // autostart 参数被二次处理等瞬态怪象（Tauri 官方 single-instance 插件 README 硬性要求）。
             // 防止托盘应用双击图标起第二进程 → 两进程共享 timers.json → last-writer-wins 丢失改动 / 双份通知
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -128,6 +125,12 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(move |app| {
             // 数据目录与存储
             let dir = app.path().app_data_dir()?;

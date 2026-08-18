@@ -98,4 +98,33 @@ if (rustColors.length !== tsColors.length || missC.length || extraC.length) {
 }
 console.log(`[contract] 色板: ${rustColors.length} 色一致 ✓`);
 
+// —— 公式契约 fixture 校验（R3：双源公式期望值单一真源，提升为 CI 门禁）——
+const fixturesRaw = readFileSync(
+  resolve(root, "contracts/contract-fixtures.json"),
+  "utf8"
+);
+const fixtures = JSON.parse(fixturesRaw);
+if (!Array.isArray(fixtures.formulaSamples) || fixtures.formulaSamples.length === 0) {
+  fail("contract-fixtures.json: formulaSamples 必须为非空数组");
+}
+const baseline = fixtures.formulaSamples[0];
+if (!baseline || typeof baseline !== "object" || !baseline.timer) {
+  fail("contract-fixtures.json: formulaSamples[0] 必须含 timer 对象");
+}
+if (!Array.isArray(baseline.currentCases) || baseline.currentCases.length === 0) {
+  fail("contract-fixtures.json: formulaSamples[0].currentCases 必须为非空数组");
+}
+// baseline.timer 字段必须是 StaminaTimer 接口字段的子集（防止 fixture 漂移）
+const timerFields = tsInterfaceFields(tsTypes, "StaminaTimer");
+const baselineKeys = Object.keys(baseline.timer);
+const unknownKeys = baselineKeys.filter((k) => !timerFields.includes(k));
+if (unknownKeys.length) {
+  fail(
+    `contract-fixtures.json: baseline.timer 含非 StaminaTimer 字段: ${unknownKeys.join(", ")}`
+  );
+}
+console.log(
+  `[contract] 公式 fixture: ${baseline.currentCases.length} 用例 / timer 字段 ${baselineKeys.length} 项与 StaminaTimer 对齐 ✓`
+);
+
 console.log("[contract] 全部契约校验通过 ✓");

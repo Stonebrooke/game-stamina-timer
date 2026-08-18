@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "formulaSamples": [
+    {
+      "id": "baseline",
+      "timer": {
+        "recoverMsPerPoint": 360000,
+        "maxStamina": 240,
+        "currentStamina": 100,
+        "lastUpdateTs": 1000000,
+        "notifyOnFull": true,
+        "notifyEveryN": 20,
+        "notifiedUpTo": 100,
+        "color": "#4a9eff"
+      },
+      "currentCases": [
+        { "nowOffsetMs": 0, "expected": 100 },
+        { "nowOffsetMs": 359999, "expected": 100 },
+        { "nowOffsetMs": 360000, "expected": 101 },
+        { "nowOffsetMs": 3600000, "expected": 110 },
+        { "nowOffsetMs": -500000, "expected": 100 },
+        { "nowOffsetMs": 28800000, "expected": 180 },
+        { "nowOffsetMs": 50400000, "expected": 240 },
+        { "nowOffsetMs": 999999999999, "expected": 240 }
+      ],
+      "pendingMilestones": {
+        "nowOffsetMs": 28800000,
+        "expected": [120, 140, 160, 180]
+      }
+    }
+  ]
+}
