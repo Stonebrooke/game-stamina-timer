@@ -119,6 +119,15 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 已存在实例时：唤起并聚焦已有主窗口，新进程随后由插件退出（P2-5 单实例保护）
+            // 防止托盘应用双击图标起第二进程 → 两进程共享 timers.json → last-writer-wins 丢失改动 / 双份通知
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .setup(move |app| {
             // 数据目录与存储
             let dir = app.path().app_data_dir()?;
