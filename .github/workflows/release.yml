@@ -74,12 +74,14 @@ jobs:
           }
           $arch = if ($wf.arch) { $wf.arch } else { "x64" }
           $cab = Join-Path $env:RUNNER_TEMP "webview2.cab"
-          # 浠呬娇鐢ㄤ粨搴撳唴 vendored 鐨?CAB锛堢绾裤€佷笉渚濊禆澶栭儴 host锛夈€?          # 鏃х殑 downloadUrl/downloadUrlTemplate 鎸囧悜宸插け鏁?host锛宺elease.yml 涓嶅啀鍥為€€鍒颁换浣曚笅杞斤紙P2-1锛夈€?          $local = if ($wf.localPath) { $wf.localPath } else { "" }
+          # 仅使用仓库内 vendored 的 CAB（离线、不依赖外部 host）。
+          # 旧的 downloadUrl/downloadUrlTemplate 指向已失效 host，release.yml 不再回退到任何下载（P2-1）。
+          $local = if ($wf.localPath) { $wf.localPath } else { "" }
           if ($local -and (Test-Path $local)) {
             Write-Host "Using vendored WebView2 runtime from $local"
             Copy-Item $local $cab -Force
           } else {
-            Write-Error "webview2.json 缂哄皯鍙敤鐨?vendored CAB锛坙ocalPath=$local锛夛紱release.yml 涓嶅啀鍥為€€鍒板閮ㄤ笅杞斤紝璇峰厛閫氳繃 webview2-sync 宸ヤ綔娴佸叆搴?CAB銆?
+            Write-Error "webview2.json 缺少可用的 vendored CAB（localPath=$local）；release.yml 不再回退到外部下载，请先通过 webview2-sync 工作流入库 CAB。"
             exit 1
           }
           $actual = (Get-FileHash -Algorithm SHA256 -Path $cab).Hash.ToLower()
@@ -109,8 +111,10 @@ jobs:
           $conf = Get-Content $confPath -Raw | ConvertFrom-Json
           if (-not $conf.bundle) { $conf | Add-Member -NotePropertyName bundle -NotePropertyValue ([PSCustomObject]@{}) }
           if (-not $conf.bundle.windows) { $conf.bundle | Add-Member -NotePropertyName windows -NotePropertyValue ([PSCustomObject]@{}) }
-          # 鐢?Add-Member -Force 璁惧彾瀛愬睘鎬э細瀵?ConvertFrom-Json 鍘熺敓浜х敓鐨?windows 涓?          # 涓婁竴姝?Add-Member 鍔ㄦ€佺敓鎴愮殑 windows 瀛愬璞￠兘閫傜敤锛堢洿鎺ヨ祴鍊煎湪鍚庤€呬笂浼氭姤
-          # "灞炴€ф壘涓嶅埌"鈥斺€擯owerShell 瀵?Add-Member 瀛愬璞＄殑鐩存帴鎴愬憳璧嬪€兼棤鏁堬級銆?          $conf.bundle.windows | Add-Member -NotePropertyName webviewInstallMode -NotePropertyValue ([PSCustomObject]@{ type = "fixedRuntime"; path = "./webview2-runtime" }) -Force
+          # 用 Add-Member -Force 设叶子属性：对 ConvertFrom-Json 原生产生的 windows 与
+          # 上一步 Add-Member 动态生成的 windows 子对象都适用（直接赋值在后者上会报
+          # "属性找不到"——PowerShell 对 Add-Member 子对象的直接成员赋值无效）。
+          $conf.bundle.windows | Add-Member -NotePropertyName webviewInstallMode -NotePropertyValue ([PSCustomObject]@{ type = "fixedRuntime"; path = "./webview2-runtime" }) -Force
           $conf | ConvertTo-Json -Depth 20 | Set-Content $confPath
           Write-Host "::notice::Patched tauri.conf.json to bundle fixed WebView2 runtime v$ver."
           "bundled=true" >> $env:GITHUB_OUTPUT
@@ -131,21 +135,21 @@ jobs:
             LOG=$(git log --pretty=format:"- %s (%h)")
           fi
           if [ "$WV_BUNDLED" = "true" ]; then
-            WV="- 绂荤嚎 WebView2 杩愯鏃讹紙v${WV_VER}锛夊凡闅忓寘鎹嗙粦锛岀洰鏍囨満鍣ㄦ棤闇€鑱旂綉瀹夎銆?
+            WV="- 离线 WebView2 运行时（v${WV_VER}）已随包捆绑，目标机器无需联网安装。"
           else
-            WV="- 鏈崋缁戠绾?WebView2 杩愯鏃讹細鐩爣鏈哄櫒闇€宸插畨瑁?WebView2 鎴栫敱 NSIS 寮曞绋嬪簭鑱旂綉瀹夎銆?
+            WV="- 未捆绑离线 WebView2 运行时：目标机器需已安装 WebView2 或由 NSIS 引导程序联网安装。"
           fi
           BODY="$RUNNER_TEMP/notes.md"
           {
-            echo "## 涓嬭浇"
+            echo "## 下载"
             echo ""
-            echo "- Windows 瀹夎鍖咃紙NSIS锛夛細\`Game Stamina Timer_${VER}_x64-setup.exe\`锛堝弻鍑诲畨瑁咃紝鑷姩瑕嗙洊鏃х増锛?
-            echo "- 渚挎惡鍘嬬缉鍖咃紙瑙ｅ帇鍗崇敤锛夛細\`Game Stamina Timer_${VER}_portable.zip\`"
+            echo "- Windows 安装包（NSIS）：\`Game Stamina Timer_${VER}_x64-setup.exe\`（双击安装，自动覆盖旧版）"
+            echo "- 便携压缩包（解压即用）：\`Game Stamina Timer_${VER}_portable.zip\`"
             echo ""
-            echo "## 杩愯鐜"
+            echo "## 运行环境"
             echo "${WV}"
             echo ""
-            echo "## 鏇存柊鍐呭"
+            echo "## 更新内容"
             echo "${LOG}"
           } > "$BODY"
           {
@@ -175,7 +179,7 @@ jobs:
           $relDir = Join-Path "src-tauri" "target" "release"
           # 裸二进制按 Cargo 包名（'-' 转 '_'）命名；productName 仅用于打包文件名，
           # 不能用 productName 定位 target/release 下的裸 exe。
-          $pkgName = (Select-String -Path src-tauri/Cargo.toml -Pattern ''^\s*name\s*=\s*"([^"]+)"'' | Select-Object -First 1).Matches.Groups[1].Value
+          $pkgName = (Select-String -Path src-tauri/Cargo.toml -Pattern '^\s*name\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
           $binName = ($pkgName -replace '-', '_')
           $exe = Join-Path $relDir "$binName.exe"
           if (-not (Test-Path $exe)) {
