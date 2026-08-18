@@ -111,7 +111,10 @@ jobs:
           $conf = Get-Content $confPath -Raw | ConvertFrom-Json
           if (-not $conf.bundle) { $conf | Add-Member -NotePropertyName bundle -NotePropertyValue ([PSCustomObject]@{}) }
           if (-not $conf.bundle.windows) { $conf.bundle | Add-Member -NotePropertyName windows -NotePropertyValue ([PSCustomObject]@{}) }
-          $conf.bundle.windows.webviewInstallMode = [PSCustomObject]@{ type = "fixedRuntime"; path = "./webview2-runtime" }
+          # 用 Add-Member -Force 设叶子属性：对 ConvertFrom-Json 原生产生的 windows 与
+          # 上一步 Add-Member 动态生成的 windows 子对象都适用（直接赋值在后者上会报
+          # "属性找不到"——PowerShell 对 Add-Member 子对象的直接成员赋值无效）。
+          $conf.bundle.windows | Add-Member -NotePropertyName webviewInstallMode -NotePropertyValue ([PSCustomObject]@{ type = "fixedRuntime"; path = "./webview2-runtime" }) -Force
           $conf | ConvertTo-Json -Depth 20 | Set-Content $confPath
           Write-Host "::notice::Patched tauri.conf.json to bundle fixed WebView2 runtime v$ver."
           "bundled=true" >> $env:GITHUB_OUTPUT
