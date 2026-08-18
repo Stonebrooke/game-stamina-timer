@@ -33,5 +33,12 @@
     "score": 92,
     "findings": { "critical": 0, "warning": 1, "suggestion": 1 },
     "scope": "PR #21 (fix/contract-fixtures): R3/T3/T5 收口 + P2-5 单实例顺序修复; 37 tests + contract + lint + build all green locally"
+  },
+  {
+    "date": "2026-08-18",
+    "mode": "PR Review (corrected)",
+    "score": 95,
+    "findings": { "critical": 0, "warning": 0, "suggestion": 1 },
+    "scope": "PR #21 复核修正：CI run 32114435447 conclusion=success（4 job 全绿含 Rust test）；上轮 'CI 未跑' Warning 撤销（假阳性，根因是 actions/runs?head_sha= 短SHA 假阴性）"
   }
 ]
