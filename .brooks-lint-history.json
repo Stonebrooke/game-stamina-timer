@@ -54,5 +54,12 @@
     "score": 97,
     "findings": { "critical": 0, "warning": 0, "suggestion": 2 },
     "scope": "origin/master @ 4825f64 (post PR #21 合并): 前轮 4 条 Warning 全部核销; 本地 37 tests + lint + build + contract 全绿; CI 由 PR #21 run 32114435447 覆盖"
+  },
+  {
+    "date": "2026-08-18",
+    "mode": "PR Review",
+    "score": 58,
+    "findings": { "critical": 1, "warning": 1, "suggestion": 1 },
+    "scope": "PR #25 (fix/release-portable-exe-path): exe 路径逻辑正确（stamina-timer→stamina_timer.exe），但全文件 3 段中文注释/echo 字符串被编辑器 GBK 编码管线损坏为 mojibake；CI 未核实（PR-status total_count=0，需作者确认）"
   }
 ]
