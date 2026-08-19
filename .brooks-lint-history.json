@@ -61,5 +61,12 @@
     "score": 58,
     "findings": { "critical": 1, "warning": 1, "suggestion": 1 },
     "scope": "PR #25 (fix/release-portable-exe-path): exe 路径逻辑正确（stamina-timer→stamina_timer.exe），但全文件 3 段中文注释/echo 字符串被编辑器 GBK 编码管线损坏为 mojibake；CI 未核实（PR-status total_count=0，需作者确认）"
+  },
+  {
+    "date": "2026-08-19",
+    "mode": "Health Dashboard",
+    "score": 97,
+    "findings": { "critical": 0, "warning": 0, "suggestion": 3 },
+    "scope": "origin/master @ f060e3a (post PR #25 合并): 上轮 PR25 Critical(mojibake) 已在合并前 force-push 修复; 正则引号 ''→' 已修; 本地 37 tests + lint + build + contract 全绿; master CI 5 job 全绿含 Rust+actionlint"
   }
 ]
