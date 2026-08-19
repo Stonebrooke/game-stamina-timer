@@ -177,12 +177,20 @@ jobs:
           $ver = "${{ steps.ver.outputs.version }}"
           $name = "Game Stamina Timer"
           $relDir = Join-Path "src-tauri" "target" "release"
-          $exe = Join-Path $relDir "$name.exe"
-          if (-not (Test-Path $exe)) { Write-Error "Built exe not found at $exe"; exit 1 }
+          # 裸二进制按 Cargo 包名（'-' 转 '_'）命名；productName 仅用于打包文件名，
+          # 不能用 productName 定位 target/release 下的裸 exe。
+          $pkgName = (Select-String -Path src-tauri/Cargo.toml -Pattern '^\s*name\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $binName = ($pkgName -replace '-', '_')
+          $exe = Join-Path $relDir "$binName.exe"
+          if (-not (Test-Path $exe)) {
+            # 兜底：直接取 target/release 下唯一的顶层 exe
+            $exe = Get-ChildItem $relDir -Filter *.exe | Select-Object -First 1
+          }
+          if (-not $exe) { Write-Error "Built exe not found in $relDir"; exit 1 }
           $stage = Join-Path $env:RUNNER_TEMP "portable"
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item $exe $stage
+          Copy-Item $exe (Join-Path $stage "$name.exe")
           $res = Join-Path $relDir "resources"
           if (Test-Path $res) { Copy-Item $res (Join-Path $stage "resources") -Recurse }
           Get-ChildItem $relDir -Filter *.dll | ForEach-Object { Copy-Item $_.FullName (Join-Path $stage $_.Name) }
