@@ -11,7 +11,7 @@ interface Props {
 
 interface FormState {
   name: string;
-  minutesPerPoint: string;
+  secondsPerPoint: string;
   maxStamina: string;
   currentStamina: string;
   notifyOnFull: boolean;
@@ -24,7 +24,7 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
   const editing = Boolean(initial);
   const [form, setForm] = useState<FormState>({
     name: "",
-    minutesPerPoint: "6",
+    secondsPerPoint: "360",
     maxStamina: "240",
     currentStamina: "0",
     notifyOnFull: true,
@@ -38,7 +38,7 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
     if (initial) {
       setForm({
         name: initial.name,
-        minutesPerPoint: String(initial.recoverMsPerPoint / 60_000),
+        secondsPerPoint: String(initial.recoverMsPerPoint / 1000),
         maxStamina: String(initial.maxStamina),
         currentStamina: String(initial.currentStamina),
         notifyOnFull: initial.notifyOnFull,
@@ -54,27 +54,27 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
     setForm(f => ({
       ...f,
       name: p.label,
-      minutesPerPoint: String(p.minutesPerPoint),
+      secondsPerPoint: String(p.secondsPerPoint),
       maxStamina: String(p.maxStamina),
       color: p.color
     }));
   };
 
   const submit = async () => {
-    const minutes = Number(form.minutesPerPoint);
+    const seconds = Number(form.secondsPerPoint);
     const max = Number(form.maxStamina);
     const current = Number(form.currentStamina);
     const everyN = Number(form.notifyEveryN);
 
     if (!form.name.trim() || form.name.trim().length > 50) return setError("名称不能为空且不超过 50 字");
-    if (!(minutes > 0)) return setError("每点恢复时间必须大于 0");
+    if (!(seconds >= 1)) return setError("每点恢复时间（秒）必须 ≥ 1");
     if (!(max >= 1)) return setError("体力上限必须 >= 1");
     if (!(current >= 0 && current <= max)) return setError(`当前体力必须在 0-${max} 之间`);
     if (!(everyN >= 0)) return setError("每 N 点提醒不能为负");
 
     const input: NewTimer = {
       name: form.name.trim(),
-      recoverMsPerPoint: minutes * 60_000,
+      recoverMsPerPoint: seconds * 1000,
       maxStamina: max,
       currentStamina: current,
       notifyOnFull: form.notifyOnFull,
@@ -109,7 +109,7 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
             </option>
             {GAME_PRESETS.map(p => (
               <option key={p.label} value={p.label}>
-                {p.label}（{p.resourceName} {p.maxStamina} 上限 / {p.minutesPerPoint}min/点）
+                {p.label}（{p.resourceName} {p.maxStamina} 上限 / {p.secondsPerPoint}秒/点）
               </option>
             ))}
           </select>
@@ -127,13 +127,13 @@ export default function TimerForm({ initial, onSubmit, onClose }: Props) {
 
         <div className="field-row">
           <label className="field">
-            <span>每点恢复（分钟）</span>
+            <span>每点恢复（秒）</span>
             <input
               type="number"
-              min={0.1}
-              step={0.5}
-              value={form.minutesPerPoint}
-              onChange={e => set({ minutesPerPoint: e.target.value })}
+              min={1}
+              step={1}
+              value={form.secondsPerPoint}
+              onChange={e => set({ secondsPerPoint: e.target.value })}
             />
           </label>
           <label className="field">
