@@ -194,6 +194,39 @@ pub fn anchor_timer(
     Ok(out)
 }
 
+/// 标记通知游标：前端通知判定后回写去重状态（对应前端 markNotified）。
+/// 仅写 notified_up_to / full_notified 两个字段，不触碰锚点与当前体力。
+/// 经 `mutate_if`（R2 修复）：仅当游标确有推进才落盘，避免重复标记时每轮空写磁盘；
+/// 落盘失败自动回滚内存（R2 核心 —— 绝不持久化未落盘的通知态）。
+#[tauri::command]
+pub fn mark_notified(
+    store: State<SharedStore>,
+    id: String,
+    notified_up_to: f64,
+    full_notified: bool,
+) -> Result<(), String> {
+    trace_cmd!("mark_notified");
+    let mut guard = write_lock(&store)?;
+    // 存在性校验：不存在必须报错，不能因 mutate_if 的闭包返回 false 而静默 Ok
+    if !guard.file.timers.iter().any(|t| t.id == id) {
+        return Err("计时器不存在".to_string());
+    }
+    guard.mutate_if(|f| {
+        let t = f
+            .timers
+            .iter_mut()
+            .find(|x| x.id == id)
+            .expect("存在性已在上方校验，持锁期间不会变化");
+        let changed = (t.notified_up_to - notified_up_to).abs() > f64::EPSILON
+            || t.full_notified != full_notified;
+        if changed {
+            t.notified_up_to = notified_up_to;
+            t.full_notified = full_notified;
+        }
+        changed
+    })
+}
+
 /// 导出全部计时器到指定路径（路径须为 .json 绝对路径，P1-2）
 #[tauri::command]
 pub fn export_timers(store: State<SharedStore>, path: String) -> Result<(), String> {

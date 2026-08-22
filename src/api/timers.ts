@@ -9,7 +9,7 @@ import {
   enable as autostartEnable,
   isEnabled as autostartIsEnabled
 } from "@tauri-apps/plugin-autostart";
-import type { NewTimer, StaminaTimer, TimersFile } from "../lib/types";
+import type { AppSettings, NewTimer, StaminaTimer, TimersFile } from "../lib/types";
 
 declare global {
   interface Window {
@@ -33,6 +33,8 @@ const tauriApi = {
   deleteTimer: (id: string) => invoke<void>("delete_timer", { id }),
   anchorTimer: (id: string, currentStamina: number) =>
     invoke<StaminaTimer>("anchor_timer", { id, currentStamina }),
+  markNotified: (id: string, notifiedUpTo: number, fullNotified: boolean) =>
+    invoke<void>("mark_notified", { id, notifiedUpTo, fullNotified }),
   /** 导出到用户选择的路径；取消返回 null，成功返回路径 */
   exportTimers: async (): Promise<string | null> => {
     const path = await save({ filters: JSON_FILTERS, defaultPath: "stamina-timers.json" });
@@ -50,7 +52,12 @@ const tauriApi = {
   setAutostart: async (on: boolean) => {
     if (on) await autostartEnable();
     else await autostartDisable();
-  }
+  },
+  getAppSettings: () => invoke<AppSettings>("get_app_settings"),
+  setAppSettings: (settings: AppSettings) => invoke<void>("set_app_settings", { settings }),
+  testNotification: () => invoke<string>("test_notification"),
+  checkNotificationSupport: () => invoke<string>("check_notification_support"),
+  exitApp: () => invoke<void>("exit_app")
 };
 
 /* ---------------- 浏览器 localStorage mock（仅预览用） ---------------- */
@@ -126,6 +133,14 @@ const mockApi = {
     mockWrite(file);
     return t;
   },
+  async markNotified(id: string, notifiedUpTo: number, fullNotified: boolean): Promise<void> {
+    const file = mockRead();
+    const t = file.timers.find(t => t.id === id);
+    if (!t) return;
+    t.notifiedUpTo = Math.min(notifiedUpTo, t.maxStamina);
+    t.fullNotified = fullNotified;
+    mockWrite(file);
+  },
   /** 浏览器降级：Blob 下载导出 */
   async exportTimers(): Promise<string | null> {
     const blob = new Blob([JSON.stringify(mockRead(), null, 2)], { type: "application/json" });
@@ -179,6 +194,29 @@ const mockApi = {
   },
   async setAutostart(on: boolean): Promise<void> {
     localStorage.setItem("stamina-timers-mock-autostart", on ? "1" : "0");
+  },
+  async getAppSettings(): Promise<AppSettings> {
+    const raw = localStorage.getItem("stamina-settings-mock");
+    if (raw) {
+      try {
+        return JSON.parse(raw) as AppSettings;
+      } catch {
+        /* 损坏回退默认 */
+      }
+    }
+    return { notificationsEnabled: true, closeBehavior: "tray", closeConfirmExit: true };
+  },
+  async setAppSettings(settings: AppSettings): Promise<void> {
+    localStorage.setItem("stamina-settings-mock", JSON.stringify(settings));
+  },
+  async testNotification(): Promise<string> {
+    return "（浏览器预览）测试通知已触发；桌面应用中安装版才会弹出系统通知。";
+  },
+  async checkNotificationSupport(): Promise<string> {
+    return "（浏览器预览）通知诊断为 Windows 专属能力，桌面应用安装版生效。";
+  },
+  async exitApp(): Promise<void> {
+    // 浏览器预览无退出概念；桌面应用由 Rust exit_app 处理
   }
 };
 
