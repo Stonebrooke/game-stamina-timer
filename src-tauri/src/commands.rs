@@ -194,6 +194,29 @@ pub fn anchor_timer(
     Ok(out)
 }
 
+/// 标记通知游标：前端通知判定后回写去重状态（对应前端 markNotified）。
+/// 仅写 notified_up_to / full_notified 两个字段，不触碰锚点与当前体力。
+#[tauri::command]
+pub fn mark_notified(
+    store: State<SharedStore>,
+    id: String,
+    notified_up_to: f64,
+    full_notified: bool,
+) -> Result<(), String> {
+    trace_cmd!("mark_notified");
+    let mut guard = write_lock(&store)?;
+    guard.mutate(|f| {
+        let t = f
+            .timers
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| "计时器不存在".to_string())?;
+        t.notified_up_to = notified_up_to;
+        t.full_notified = full_notified;
+        Ok(())
+    })
+}
+
 /// 导出全部计时器到指定路径（路径须为 .json 绝对路径，P1-2）
 #[tauri::command]
 pub fn export_timers(store: State<SharedStore>, path: String) -> Result<(), String> {

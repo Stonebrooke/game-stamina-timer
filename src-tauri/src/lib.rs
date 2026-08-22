@@ -36,7 +36,8 @@ fn notification_loop(handle: tauri::AppHandle) {
 
         // 全局通知开关：关闭则整轮跳过（不推进游标，重新开启后补发一次，符合预期）
         let notif_on = {
-            let guard = match handle.state::<RwLock<AppSettings>>().read() {
+            let settings_state = handle.state::<RwLock<AppSettings>>();
+            let guard = match settings_state.read() {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
             };
@@ -185,7 +186,8 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // 读设置决定关闭行为（项 5）：退出确认仅弹出一次
                 let (behavior, confirm) = {
-                    let guard = match window.state::<RwLock<AppSettings>>().read() {
+                    let settings_state = window.state::<RwLock<AppSettings>>();
+                    let guard = match settings_state.read() {
                         Ok(g) => g,
                         Err(p) => p.into_inner(),
                     };
@@ -245,15 +247,14 @@ fn set_app_settings(
     store: tauri::State<RwLock<AppSettings>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    // 写内存
-    {
-        let mut guard = store.write().map_err(|_| "写入设置失败".to_string())?;
-        *guard = settings;
-    }
-    // 落盘（重新派生路径，避免额外状态）
+    // 先落盘（save 借用 &self，不移动 settings）
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let path = dir.join("settings.json");
-    settings.save(&path)
+    settings.save(&path)?;
+    // 再写内存
+    let mut guard = store.write().map_err(|_| "写入设置失败".to_string())?;
+    *guard = settings;
+    Ok(())
 }
 
 /* ---------------- 通知测试 / 诊断（项 1 审查修正 G1/G7） ---------------- */
