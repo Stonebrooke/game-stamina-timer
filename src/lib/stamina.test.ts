@@ -10,37 +10,65 @@ import {
   formatDuration
 } from "./stamina";
 import type { StaminaTimer } from "./types";
-// 公式契约单一真源（R3/T3：与 Rust 端 timer.rs 测试同源，消除双端 fixture 默认值 + 期望值重复）
-import fixtures from "../../contracts/contract-fixtures.json";
 
-/** 构造一个测试用计时器：默认字段取自 contract-fixtures.json baseline（与 Rust 端同源） */
+/** 构造一个测试用计时器：默认 6min/点，上限 240，锚定 100 */
 function makeTimer(overrides: Partial<StaminaTimer> = {}): StaminaTimer {
-  const base = fixtures.formulaSamples[0].timer;
   return {
     id: "t1",
     name: "测试游戏",
-    createdAt: 0,
+    recoverMsPerPoint: 6 * 60 * 1000, // 6 分钟/点
+    maxStamina: 240,
+    currentStamina: 100,
+    lastUpdateTs: 1_000_000,
+    notifyOnFull: true,
+    notifyEveryN: 20,
+    notifiedUpTo: 100,
     fullNotified: false,
-    recoverMsPerPoint: base.recoverMsPerPoint,
-    maxStamina: base.maxStamina,
-    currentStamina: base.currentStamina,
-    lastUpdateTs: base.lastUpdateTs,
-    notifyOnFull: base.notifyOnFull,
-    notifyEveryN: base.notifyEveryN,
-    notifiedUpTo: base.notifiedUpTo,
-    color: base.color,
+    color: "#4a9eff",
+    createdAt: 0,
     ...overrides
   };
 }
 
-describe("computeCurrent（公式契约：双端共享 contract-fixtures.json）", () => {
-  const sample = fixtures.formulaSamples[0];
-  for (const c of sample.currentCases) {
-    it(`nowOffsetMs=${c.nowOffsetMs} → 期望 ${c.expected}`, () => {
-      const t = makeTimer();
-      expect(computeCurrent(t, t.lastUpdateTs + c.nowOffsetMs)).toBe(c.expected);
-    });
-  }
+describe("computeCurrent", () => {
+  it("刚锚定时刻体力不变", () => {
+    const t = makeTimer();
+    expect(computeCurrent(t, t.lastUpdateTs)).toBe(100);
+  });
+
+  it("不足 1 点恢复时间不增加", () => {
+    const t = makeTimer();
+    expect(computeCurrent(t, t.lastUpdateTs + 359_999)).toBe(100);
+  });
+
+  it("恰好 1 点恢复时间 +1", () => {
+    const t = makeTimer();
+    expect(computeCurrent(t, t.lastUpdateTs + 360_000)).toBe(101);
+  });
+
+  it("1 小时后 +10", () => {
+    const t = makeTimer();
+    expect(computeCurrent(t, t.lastUpdateTs + 3_600_000)).toBe(110);
+  });
+
+  it("不超过上限（已满封顶）", () => {
+    const t = makeTimer();
+    // (240-100)*6min = 840min = 50_400_000ms 后刚好满
+    expect(computeCurrent(t, t.lastUpdateTs + 50_400_000)).toBe(240);
+    // 远超满的时间也不溢出
+    expect(computeCurrent(t, t.lastUpdateTs + 999_999_999_999)).toBe(240);
+  });
+
+  it("时钟回拨（负 elapsed）按 0 处理", () => {
+    const t = makeTimer();
+    expect(computeCurrent(t, t.lastUpdateTs - 500_000)).toBe(100);
+  });
+
+  it("长睡眠后自动跨过睡眠时长", () => {
+    const t = makeTimer();
+    // 睡 8 小时 = 80 点 → 100+80=180
+    expect(computeCurrent(t, t.lastUpdateTs + 8 * 3_600_000)).toBe(180);
+  });
 });
 
 describe("msUntilNext", () => {
@@ -117,10 +145,12 @@ describe("pendingMilestones（相对锚点，每恢复 N 点）", () => {
     expect(pendingMilestones(t, t.lastUpdateTs + 20 * 360_000)).toEqual([120]);
   });
 
-  it("长睡眠跨多个里程碑，全部列出（调用方合并通知，契约来自 fixture）", () => {
+  it("长睡眠跨多个里程碑，全部列出（调用方合并通知）", () => {
     const t = makeTimer();
-    const pm = fixtures.formulaSamples[0].pendingMilestones;
-    expect(pendingMilestones(t, t.lastUpdateTs + pm.nowOffsetMs)).toEqual(pm.expected);
+    // 8 小时 = 80 点 → 120/140/160/180
+    expect(pendingMilestones(t, t.lastUpdateTs + 8 * 3_600_000)).toEqual([
+      120, 140, 160, 180
+    ]);
   });
 
   it("里程碑封顶于上限", () => {
@@ -148,21 +178,21 @@ describe("isFull", () => {
   });
 });
 
-describe("formatDuration", () => {
-  it("< 1h → MM:SS", () => {
-    expect(formatDuration(59_000)).toBe("00:59");
-    expect(formatDuration(3_599_000)).toBe("59:59");
+describe("formatDuration（中文）", () => {
+  it("秒级 → X秒", () => {
+    expect(formatDuration(59_000)).toBe("59秒");
+    expect(formatDuration(-1000)).toBe("0秒");
   });
-  it("< 24h → Xh Ym", () => {
-    expect(formatDuration(3_600_000)).toBe("1h 0m");
-    expect(formatDuration(86_399_000)).toBe("23h 59m");
+  it("分钟级 → X分钟X秒", () => {
+    expect(formatDuration(3_599_000)).toBe("59分钟59秒");
   });
-  it("≥ 24h → Xd Xh", () => {
-    expect(formatDuration(86_400_000)).toBe("1d 0h");
-    expect(formatDuration(2 * 86_400_000 + 5 * 3_600_000)).toBe("2d 5h");
+  it("小时级 → X小时X分钟X秒（G3：≥1h 显示秒）", () => {
+    expect(formatDuration(3_600_000)).toBe("1小时0分钟0秒");
+    expect(formatDuration(86_399_000)).toBe("23小时59分钟59秒");
   });
-  it("负值按 0", () => {
-    expect(formatDuration(-1000)).toBe("00:00");
+  it("天级 → X天X小时", () => {
+    expect(formatDuration(86_400_000)).toBe("1天0小时");
+    expect(formatDuration(2 * 86_400_000 + 5 * 3_600_000)).toBe("2天5小时");
   });
 });
 

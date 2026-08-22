@@ -13,6 +13,10 @@ const ROW_H = 30;
 const WIDTH = 680;
 
 const STEPS = [
+  30_000,
+  60_000,
+  2 * 60_000,
+  3 * 60_000,
   5 * 60_000,
   15 * 60_000,
   30 * 60_000,
@@ -37,6 +41,8 @@ function tickLabel(ts: number, step: number): string {
   const d = new Date(ts);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  if (step < 60_000) return `${hh}:${mm}:${ss}`;
   if (step >= 86_400_000) return `${d.getMonth() + 1}/${d.getDate()}`;
   return `${hh}:${mm}`;
 }
@@ -114,6 +120,11 @@ export default function RecoveryTimeline({ timers }: Props) {
   const ticks: number[] = [];
   for (let ts = firstTick; ts <= rangeEnd; ts += step) {
     if (ts > now) ticks.push(ts);
+  }
+
+  // 空刻度兜底：极短剩余时间（step 大于 range）时仍保证轴上有刻度
+  if (ticks.length === 0 && rangeEnd > now) {
+    ticks.push(rangeEnd);
   }
 
   return (

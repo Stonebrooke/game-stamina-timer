@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Game Stamina Timer",
+        "title": "游戏体力恢复计时器",
         "width": 1080,
         "height": 720,
         "minWidth": 760,
