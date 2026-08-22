@@ -55,7 +55,20 @@ export interface GamePreset {
   /** 资源名（如「电量」「原粹树脂」） */
   resourceName: string;
   maxStamina: number;
-  /** 每点恢复分钟数（展示友好，转 ms 由调用方做） */
-  minutesPerPoint: number;
+  /** 每点恢复秒数（展示友好，转 ms 由调用方做） */
+  secondsPerPoint: number;
   color: string;
+}
+
+/** 关闭窗口行为 */
+export type CloseBehavior = "tray" | "exit";
+
+/** 应用设置（与 Rust `settings.rs` 的 serde(camelCase) 对齐） */
+export interface AppSettings {
+  /** 通知总开关 */
+  notificationsEnabled: boolean;
+  /** 关闭窗口行为：tray=最小化到托盘；exit=退出程序 */
+  closeBehavior: CloseBehavior;
+  /** exit 行为下是否「退出前不再确认」（false = 关闭弹一次确认） */
+  closeConfirmExit: boolean;
 }

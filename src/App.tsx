@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import OverviewBar from "./components/OverviewBar";
 import RecoveryTimeline from "./components/RecoveryTimeline";
 import SettingsModal from "./components/SettingsModal";
 import TimerForm from "./components/TimerForm";
 import TimerGrid from "./components/TimerGrid";
-import type { NewTimer, StaminaTimer } from "./lib/types";
+import type { AppSettings, NewTimer, StaminaTimer } from "./lib/types";
+import { api } from "./api/timers";
 import { useTimers } from "./store/useTimers";
 
 export default function App() {
@@ -25,6 +27,8 @@ export default function App() {
   const [editing, setEditing] = useState<StaminaTimer | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleting, setDeleting] = useState<StaminaTimer | null>(null);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+  const [neverAsk, setNeverAsk] = useState(false);
 
   // 首屏加载
   useEffect(() => {
@@ -46,11 +50,40 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [tick]);
 
+  // 退出确认（项 5）：Rust CloseRequested 在 exit + 需确认时 emit 此事件，
+  // 前端弹一次确认；「不再提醒」则写设置（closeConfirmExit=false）后退出。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<null>("exit-confirm-requested", () => setExitConfirmOpen(true))
+      .then(u => {
+        unlisten = u;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
+
   const submitForm = async (input: NewTimer, id?: string) => {
     if (id && editing) {
       await update({ ...editing, ...input });
     } else {
       await add(input);
+    }
+  };
+
+  const confirmExit = () => {
+    void api().exitApp();
+  };
+
+  const cancelExit = () => {
+    if (neverAsk) {
+      // 不再提醒：写入 closeConfirmExit=false 后直接退出（下次关闭不再弹确认）
+      api()
+        .getAppSettings()
+        .then((s: AppSettings) => api().setAppSettings({ ...s, closeConfirmExit: false }))
+        .then(() => api().exitApp())
+        .catch(() => api().exitApp());
+    } else {
+      setExitConfirmOpen(false);
     }
   };
 
@@ -144,6 +177,31 @@ export default function App() {
                 }}
               >
                 删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exitConfirmOpen && (
+        <div className="modal-mask" onClick={cancelExit}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <h2>退出确认</h2>
+            <p>确定要退出游戏体力计时器吗？</p>
+            <label className="field field-inline" style={{ marginBottom: 12 }}>
+              <input
+                type="checkbox"
+                checked={neverAsk}
+                onChange={e => setNeverAsk(e.target.checked)}
+              />
+              <span>不再提醒（下次关闭直接退出）</span>
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={cancelExit}>
+                取消
+              </button>
+              <button className="btn btn-danger" onClick={confirmExit}>
+                退出
               </button>
             </div>
           </div>

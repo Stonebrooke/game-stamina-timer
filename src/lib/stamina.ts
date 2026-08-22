@@ -79,8 +79,8 @@ export function isFull(t: StaminaTimer, now: number): boolean {
 }
 
 /**
- * 倒计时格式化：
- * < 1h → "MM:SS"；< 24h → "Xh Ym"；≥ 24h → "Xd Xh"
+ * 倒计时格式化（中文）：
+ * < 1min → "X秒"；< 1h → "X分钟X秒"；< 24h → "X小时X分钟X秒"；≥ 24h → "X天X小时"
  */
 export function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -89,8 +89,9 @@ export function formatDuration(ms: number): string {
   const s = totalSec % 60;
   if (h >= 24) {
     const d = Math.floor(h / 24);
-    return `${d}d ${h % 24}h`;
+    return `${d}天${h % 24}小时`;
   }
-  if (h >= 1) return `${h}h ${m}m`;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  if (h >= 1) return `${h}小时${m}分钟${s}秒`;
+  if (m >= 1) return `${m}分钟${s}秒`;
+  return `${s}秒`;
 }
