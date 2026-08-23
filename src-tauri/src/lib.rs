@@ -401,11 +401,14 @@ fn find_start_menu_shortcut() -> Option<std::path::PathBuf> {
 
 #[cfg(target_os = "windows")]
 unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::Interface;
+    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
     use windows::Win32::System::Com::{
-        CLSCTX_ALL, IPersistFile, STGM_READWRITE, StructuredStorage::PROPVARIANT,
+        IPersistFile, StructuredStorage::PROPVARIANT, CLSCTX_ALL, STGM_READWRITE,
     };
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
     use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PKEY_AppUserModel_ID};
     let link: IShellLinkW =
         match windows::Win32::System::Com::CoCreateInstance(&ShellLink, None, CLSCTX_ALL) {
             Ok(l) => l,
@@ -451,6 +454,7 @@ unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
 
 #[cfg(target_os = "windows")]
 unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
+    use windows::Win32::Foundation::NO_ERROR;
     use windows::Win32::System::Registry::{
         HKEY_CURRENT_USER, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ,
     };
@@ -458,7 +462,7 @@ unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
     let sub_w: Vec<u16> = sub.encode_utf16().chain(std::iter::once(0)).collect();
     let mut hkey = windows::Win32::System::Registry::HKEY::default();
     let mut disp = windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION(0);
-    if let Err(e) = windows::Win32::System::Registry::RegCreateKeyExW(
+    let err = windows::Win32::System::Registry::RegCreateKeyExW(
         HKEY_CURRENT_USER,
         windows::core::PCWSTR(sub_w.as_ptr()),
         None,
@@ -468,8 +472,9 @@ unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
         None,
         &mut hkey,
         Some(&mut disp),
-    ) {
-        eprintln!("[aumid] B3 注册表项创建失败: {e}");
+    );
+    if err != NO_ERROR {
+        eprintln!("[aumid] B3 注册表项创建失败: code={}", err.0);
         return;
     }
     let name_w: Vec<u16> = "DisplayName"
@@ -484,13 +489,16 @@ unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
         val_w.as_ptr() as *const u8,
         val_w.len() * std::mem::size_of::<u16>(),
     );
-    let _ = windows::Win32::System::Registry::RegSetValueExW(
+    let err = windows::Win32::System::Registry::RegSetValueExW(
         hkey,
         windows::core::PCWSTR(name_w.as_ptr()),
         None,
         REG_SZ,
         Some(data),
     );
+    if err != NO_ERROR {
+        eprintln!("[aumid] B3 注册表值写入失败: code={}", err.0);
+    }
     let _ = windows::Win32::System::Registry::RegCloseKey(hkey);
     println!("[aumid] B3 已注册 AUMID 注册表项: {sub}");
 }
