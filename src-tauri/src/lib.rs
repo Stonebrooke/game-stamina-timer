@@ -401,7 +401,7 @@ fn find_start_menu_shortcut() -> Option<std::path::PathBuf> {
 
 #[cfg(target_os = "windows")]
 unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
-    use windows::Win32::System::Com::{CLSCTX_ALL, STGM_READWRITE};
+    use windows::Win32::System::Com::{CLSCTX_ALL, STGM_READWRITE, StructuredStorage::PROPVARIANT};
     use windows::Win32::UI::Shell::{IPersistFile, IPropertyStore, IShellLinkW, ShellLink};
     let link: IShellLinkW =
         match windows::Win32::System::Com::CoCreateInstance(&ShellLink, None, CLSCTX_ALL) {
@@ -434,12 +434,7 @@ unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
             return;
         }
     };
-    let aumid_w: Vec<u16> = aumid.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut pv = windows::Win32::System::Com::PROPVARIANT::default();
-    pv.Anonymous.Anonymous.Anonymous.vt =
-        windows::Win32::System::Com::VARTYPE(windows::Win32::System::Com::VT_LPWSTR.0);
-    pv.Anonymous.Anonymous.Anonymous.pwszVal =
-        windows::Win32::Foundation::PWSTR(aumid_w.as_ptr() as *mut u16);
+    let pv = PROPVARIANT::from(aumid);
     if let Err(e) = store.SetValue(&windows::Win32::UI::Shell::PKEY_AppUserModel_ID, &pv) {
         eprintln!("[aumid] B2 SetValue AUMID 失败: {e}");
         return;
