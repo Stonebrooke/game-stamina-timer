@@ -401,8 +401,11 @@ fn find_start_menu_shortcut() -> Option<std::path::PathBuf> {
 
 #[cfg(target_os = "windows")]
 unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
-    use windows::Win32::System::Com::{CLSCTX_ALL, STGM_READWRITE, StructuredStorage::PROPVARIANT};
-    use windows::Win32::UI::Shell::{IPersistFile, IPropertyStore, IShellLinkW, ShellLink};
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, IPersistFile, STGM_READWRITE, StructuredStorage::PROPVARIANT,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PKEY_AppUserModel_ID};
     let link: IShellLinkW =
         match windows::Win32::System::Com::CoCreateInstance(&ShellLink, None, CLSCTX_ALL) {
             Ok(l) => l,
@@ -435,7 +438,7 @@ unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
         }
     };
     let pv = PROPVARIANT::from(aumid);
-    if let Err(e) = store.SetValue(&windows::Win32::UI::Shell::PKEY_AppUserModel_ID, &pv) {
+    if let Err(e) = store.SetValue(&PKEY_AppUserModel_ID, &pv) {
         eprintln!("[aumid] B2 SetValue AUMID 失败: {e}");
         return;
     }
@@ -454,11 +457,11 @@ unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
     let sub = format!("Software\\Classes\\AppUserModelId\\{aumid}");
     let sub_w: Vec<u16> = sub.encode_utf16().chain(std::iter::once(0)).collect();
     let mut hkey = windows::Win32::System::Registry::HKEY::default();
-    let mut disp = windows::Win32::System::Registry::REG_DISPOSITION(0);
+    let mut disp = windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION(0);
     if let Err(e) = windows::Win32::System::Registry::RegCreateKeyExW(
         HKEY_CURRENT_USER,
         windows::core::PCWSTR(sub_w.as_ptr()),
-        0,
+        None,
         None,
         REG_OPTION_NON_VOLATILE,
         KEY_WRITE,
@@ -484,7 +487,7 @@ unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
     let _ = windows::Win32::System::Registry::RegSetValueExW(
         hkey,
         windows::core::PCWSTR(name_w.as_ptr()),
-        0,
+        None,
         REG_SZ,
         Some(data),
     );
