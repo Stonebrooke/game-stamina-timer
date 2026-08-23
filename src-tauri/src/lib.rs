@@ -277,18 +277,28 @@ fn test_notification(app: tauri::AppHandle) -> Result<String, String> {
 fn check_notification_support() -> Result<String, String> {
     use std::path::PathBuf;
     let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let start_menu = PathBuf::from(&local)
-        .join("Microsoft")
+    let program_data = std::env::var("ProgramData").unwrap_or_default();
+    let rel = PathBuf::from("Microsoft")
         .join("Windows")
         .join("Start Menu")
-        .join("Programs");
-    let lnk = start_menu.join("Game Stamina Timer.lnk");
-    let lnk_exists = lnk.exists();
+        .join("Programs")
+        .join("Game Stamina Timer.lnk");
+    let local_lnk = PathBuf::from(&local).join(&rel);
+    let programdata_lnk = PathBuf::from(&program_data).join(&rel);
+    // NSIS 安装器可能装到 all-users（ProgramData）或 per-user（Local），两者都算有效入口。
+    // 仅查 Local 会把 all-users 安装误报为「缺失」，故双路径都查。
+    let (found, where_) = if local_lnk.exists() {
+        (true, local_lnk.display().to_string())
+    } else if programdata_lnk.exists() {
+        (true, programdata_lnk.display().to_string())
+    } else {
+        (false, local_lnk.display().to_string())
+    };
     let mut msg = String::from("Windows 通知诊断：\n");
     msg.push_str(&format!(
         "· 开始菜单快捷方式（含 AUMID）：{}（路径 {}）\n",
-        if lnk_exists { "存在" } else { "缺失" },
-        lnk.display()
+        if found { "存在" } else { "缺失" },
+        where_
     ));
     msg.push_str("· 安装版（开始菜单启动，非 target\\debug|release 目录）才支持 toast 通知；\n");
     msg.push_str(
@@ -324,19 +334,22 @@ fn ensure_aumid_shortcut() {
         Ok(v) => v,
         Err(_) => return,
     };
-    let lnk = PathBuf::from(local)
-        .join("Microsoft")
+    let program_data = std::env::var("ProgramData").unwrap_or_default();
+    let rel = PathBuf::from("Microsoft")
         .join("Windows")
         .join("Start Menu")
         .join("Programs")
         .join("Game Stamina Timer.lnk");
-    if lnk.exists() {
-        eprintln!("[aumid] 开始菜单快捷方式已存在：{}", lnk.display());
-    } else {
-        eprintln!(
+    let candidates = [
+        PathBuf::from(&local).join(&rel),
+        PathBuf::from(&program_data).join(&rel),
+    ];
+    match candidates.iter().find(|p| p.exists()) {
+        Some(p) => eprintln!("[aumid] 开始菜单快捷方式已存在：{}", p.display()),
+        None => eprintln!(
             "[aumid] 开始菜单快捷方式缺失（预期由 NSIS 安装器创建）：{}",
-            lnk.display()
-        );
+            candidates[0].display()
+        ),
     }
 }
 
