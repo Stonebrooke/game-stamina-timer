@@ -20,3 +20,11 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+# AUMID 三件套（项1 通知归属/去重/设置管理）：用 windows crate 标准 COM API，
+# 严禁使用被投毒占用的 windows-shortcuts crate。版本与 Tauri 内部锁定的 0.61 对齐。
+windows = { version = "0.61", features = [
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_Foundation",
+  "Win32_System_Registry",
+] }
