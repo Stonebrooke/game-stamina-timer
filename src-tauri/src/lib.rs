@@ -341,7 +341,15 @@ fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
 ///  B3 注册表 `HKCU\Software\Classes\AppUserModelId\<aumid>` 声明显示名
 /// 必须与 tauri.conf.json 的 identifier 完全一致：`com.stonebrooke.stamina-timer`。
 /// 仅安装版（非 target\debug|release 目录）写 .lnk；注册表项始终写（轻便）。失败仅日志，不阻塞启动。
+//
+// ⚠️ 两个常量必须与使用它们的函数一样加 `#[cfg(target_os = "windows")]`：
+//    若声明在模块顶层不加门控，非 Windows 目标下它们无人使用 → dead_code。
+//    而 CI 在 ubuntu 跑 `cargo clippy --all-targets -- -D warnings`，`-D warnings` 隐含
+//    `-D dead_code`，会直接把构建判失败（实测 PR #32 第二次 CI 就是挂在这里）。
+//    本地 `cargo check --target x86_64-pc-windows-msvc` 走 Windows 目标，永远测不出来。
+#[cfg(target_os = "windows")]
 const APP_AUMID: &str = "com.stonebrooke.stamina-timer";
+#[cfg(target_os = "windows")]
 const APP_DISPLAY_NAME: &str = "游戏体力恢复计时器";
 
 #[cfg(target_os = "windows")]
