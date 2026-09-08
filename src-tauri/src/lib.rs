@@ -103,7 +103,7 @@ fn notification_loop(handle: tauri::AppHandle) {
                 .show()
             {
                 // 注意：tauri-plugin-notification 的 show() 返回 Ok 后异步发送、错误被吞，
-                // 这里仅记录真实失败原因，便于排障（根因：未注册 AUMID / 未授权等）。
+                // 这里仅记录真实失败原因，便于排障（AUMID 三件套已注册；若仍弹不出，转查系统通知权限/专注助手/Windows 版本）。
                 eprintln!("[notify] send failed: {e}");
             }
         }
@@ -333,36 +333,182 @@ fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/* ---------------- AUMID 快捷方式自愈（项 1 审查修正 S1/S2） ---------------- */
-/// 安全提示：计划原建议的 `windows-shortcuts` crate 在 crates.io 已被占用为恶意/占位包
-/// （仅 0.0.1，描述「Fuck Auto HotKeys」，无 lib 仅二进制），严禁使用。
-/// AUMID 须经 Windows COM `IPropertyStore::SetValue(PKEY_AppUserModel_ID)` 写入开始菜单 .lnk；
-/// 此实现需在真机（Windows + `windows` crate）编译验证，本沙箱无法编译 Windows 目标，
-/// 故先留安全桩（仅做存在性诊断打印，不阻塞启动），由后续在真机迭代补全实际写 AUMID。
+/* ---------------- AUMID 注册（项1 通知归属：运行时 + .lnk + 注册表 三件套） ---------------- */
+/// 安全说明：计划原建议的 `windows-shortcuts` crate 在 crates.io 已被占用为恶意/占位包，严禁使用。
+/// 改用 `windows` crate（与 Tauri 同版本 0.61）标准 COM API 注册 AUMID，覆盖三处：
+///  B1 运行时 `SetCurrentProcessExplicitAppUserModelID`（任务栏/跳转列表归属）
+///  B2 开始菜单 `.lnk` 经 `IPropertyStore::SetValue(PKEY_AppUserModel_ID)` 写 AUMID（通知中心归类/去重/跳转）
+///  B3 注册表 `HKCU\Software\Classes\AppUserModelId\<aumid>` 声明显示名
+/// 必须与 tauri.conf.json 的 identifier 完全一致：`com.stonebrooke.stamina-timer`。
+/// 仅安装版（非 target\debug|release 目录）写 .lnk；注册表项始终写（轻便）。失败仅日志，不阻塞启动。
+//
+// ⚠️ 两个常量必须与使用它们的函数一样加 `#[cfg(target_os = "windows")]`：
+//    若声明在模块顶层不加门控，非 Windows 目标下它们无人使用 → dead_code。
+//    而 CI 在 ubuntu 跑 `cargo clippy --all-targets -- -D warnings`，`-D warnings` 隐含
+//    `-D dead_code`，会直接把构建判失败（实测 PR #32 第二次 CI 就是挂在这里）。
+//    本地 `cargo check --target x86_64-pc-windows-msvc` 走 Windows 目标，永远测不出来。
+#[cfg(target_os = "windows")]
+const APP_AUMID: &str = "com.stonebrooke.stamina-timer";
+#[cfg(target_os = "windows")]
+const APP_DISPLAY_NAME: &str = "游戏体力恢复计时器";
+
 #[cfg(target_os = "windows")]
 fn ensure_aumid_shortcut() {
-    use std::path::PathBuf;
-    let local = match std::env::var("LOCALAPPDATA") {
-        Ok(v) => v,
-        Err(_) => return,
-    };
+    unsafe {
+        // B1: 当前进程 AUMID
+        let aumid_w: Vec<u16> = APP_AUMID.encode_utf16().chain(std::iter::once(0)).collect();
+        if let Err(e) = windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+            windows::core::PCWSTR(aumid_w.as_ptr()),
+        ) {
+            eprintln!("[aumid] B1 SetCurrentProcessExplicitAppUserModelID 失败: {e}");
+        } else {
+            println!("[aumid] B1 已为当前进程设置 AUMID: {APP_AUMID}");
+        }
+
+        // COM 初始化（Apartment 模型，供 .lnk 写 IPropertyStore）
+        let _ = windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+        );
+
+        // 仅安装版写 .lnk（开发期 target 目录无开始菜单快捷方式，写了也无效）
+        let exe = std::env::current_exe().unwrap_or_default();
+        let low = exe.to_string_lossy().to_lowercase();
+        if !(low.contains("target\\debug") || low.contains("target\\release")) {
+            if let Some(lnk) = find_start_menu_shortcut() {
+                write_aumid_to_lnk(&lnk, APP_AUMID);
+            } else {
+                eprintln!("[aumid] B2 未找到开始菜单快捷方式，跳过 .lnk 写 AUMID（仍写注册表项）");
+            }
+        }
+
+        // B3: 注册表项（始终写，提升通知中心归属一致性）
+        register_aumid_registry(APP_AUMID, APP_DISPLAY_NAME);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_start_menu_shortcut() -> Option<std::path::PathBuf> {
+    let local = std::env::var("LOCALAPPDATA").ok()?;
     let program_data = std::env::var("ProgramData").unwrap_or_default();
-    let rel = PathBuf::from("Microsoft")
+    let rel = std::path::Path::new("Microsoft")
         .join("Windows")
         .join("Start Menu")
         .join("Programs")
         .join("Game Stamina Timer.lnk");
-    let candidates = [
-        PathBuf::from(&local).join(&rel),
-        PathBuf::from(&program_data).join(&rel),
-    ];
-    match candidates.iter().find(|p| p.exists()) {
-        Some(p) => eprintln!("[aumid] 开始菜单快捷方式已存在：{}", p.display()),
-        None => eprintln!(
-            "[aumid] 开始菜单快捷方式缺失（预期由 NSIS 安装器创建）：{}",
-            candidates[0].display()
-        ),
+    let c1 = std::path::Path::new(&local).join(&rel);
+    if c1.exists() {
+        return Some(c1);
     }
+    let c2 = std::path::Path::new(&program_data).join(&rel);
+    if c2.exists() {
+        return Some(c2);
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn write_aumid_to_lnk(lnk: &std::path::Path, aumid: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::Interface;
+    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
+    use windows::Win32::System::Com::{
+        IPersistFile, StructuredStorage::PROPVARIANT, CLSCTX_ALL, STGM_READWRITE,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    let link: IShellLinkW =
+        match windows::Win32::System::Com::CoCreateInstance(&ShellLink, None, CLSCTX_ALL) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("[aumid] B2 CoCreateInstance ShellLink 失败: {e}");
+                return;
+            }
+        };
+    let persist: IPersistFile = match link.cast() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[aumid] B2 获取 IPersistFile 失败: {e}");
+            return;
+        }
+    };
+    let path_w: Vec<u16> = lnk
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    if let Err(e) = persist.Load(windows::core::PCWSTR(path_w.as_ptr()), STGM_READWRITE) {
+        eprintln!("[aumid] B2 加载 .lnk 失败: {e}");
+        return;
+    }
+    let store: IPropertyStore = match link.cast() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[aumid] B2 获取 IPropertyStore 失败: {e}");
+            return;
+        }
+    };
+    let pv = PROPVARIANT::from(aumid);
+    if let Err(e) = store.SetValue(&PKEY_AppUserModel_ID, &pv) {
+        eprintln!("[aumid] B2 SetValue AUMID 失败: {e}");
+        return;
+    }
+    if let Err(e) = store.Commit() {
+        eprintln!("[aumid] B2 Commit 失败: {e}");
+        return;
+    }
+    println!("[aumid] B2 已为开始菜单快捷方式写入 AUMID: {aumid}");
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn register_aumid_registry(aumid: &str, display_name: &str) {
+    use windows::Win32::Foundation::NO_ERROR;
+    use windows::Win32::System::Registry::{
+        HKEY_CURRENT_USER, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ,
+    };
+    let sub = format!("Software\\Classes\\AppUserModelId\\{aumid}");
+    let sub_w: Vec<u16> = sub.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut hkey = windows::Win32::System::Registry::HKEY::default();
+    let mut disp = windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION(0);
+    let err = windows::Win32::System::Registry::RegCreateKeyExW(
+        HKEY_CURRENT_USER,
+        windows::core::PCWSTR(sub_w.as_ptr()),
+        None,
+        None,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        None,
+        &mut hkey,
+        Some(&mut disp),
+    );
+    if err != NO_ERROR {
+        eprintln!("[aumid] B3 注册表项创建失败: code={}", err.0);
+        return;
+    }
+    let name_w: Vec<u16> = "DisplayName"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let val_w: Vec<u16> = display_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let data: &[u8] = std::slice::from_raw_parts(
+        val_w.as_ptr() as *const u8,
+        val_w.len() * std::mem::size_of::<u16>(),
+    );
+    let err = windows::Win32::System::Registry::RegSetValueExW(
+        hkey,
+        windows::core::PCWSTR(name_w.as_ptr()),
+        None,
+        REG_SZ,
+        Some(data),
+    );
+    if err != NO_ERROR {
+        eprintln!("[aumid] B3 注册表值写入失败: code={}", err.0);
+    }
+    let _ = windows::Win32::System::Registry::RegCloseKey(hkey);
+    println!("[aumid] B3 已注册 AUMID 注册表项: {sub}");
 }
 
 #[cfg(not(target_os = "windows"))]
