@@ -31,7 +31,7 @@ uuid = { version = "1", features = ["v4"] }
 #    （本地 `cargo check --target x86_64-pc-windows-msvc` 走 Windows 目标，命中符号，永远测不出此问题）
 #    AUMID 代码本身即 #[cfg(windows)] 门控，非 Windows 平台本就不需要该依赖。
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
   "Win32_System_Com",
   "Win32_UI_Shell",
   "Win32_UI_Shell_PropertiesSystem",
