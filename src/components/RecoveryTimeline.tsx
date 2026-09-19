@@ -205,9 +205,9 @@ export default function RecoveryTimeline({ timers }: Props) {
                 stroke="var(--surface)"
                 strokeWidth={2}
               >
-                <title>
-                  {e.t.name} · {e.full ? "已回满" : `${formatDuration(e.fullAt - now)} 后回满`}
-                </title>
+              <title>
+                {`${e.t.name} · ${e.full ? "已回满" : `${formatDuration(e.fullAt - now)} 后回满`}`}
+              </title>
               </circle>
               <text
                 x={label.x}
