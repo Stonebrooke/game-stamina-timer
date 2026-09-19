@@ -32,7 +32,8 @@ const STEPS = [
 
 function pickStep(rangeMs: number): number {
   for (const s of STEPS) {
-    if (rangeMs / s <= 8) return s;
+    // 上限 12：约 23h 跨度可落到 2h 档（23/2=11.5≤12），满足"刻度更细致"诉求
+    if (rangeMs / s <= 12) return s;
   }
   return 14 * 86_400_000;
 }
@@ -132,21 +133,31 @@ export default function RecoveryTimeline({ timers }: Props) {
       <div className="timeline-title">恢复时间轴</div>
       <svg viewBox={`0 0 ${WIDTH} ${height}`} className="timeline-svg" role="img">
         {/* 时间刻度 */}
-        {ticks.map(ts => (
-          <g key={ts}>
-            <line
-              x1={x(ts)}
-              y1={AXIS_H - 8}
-              x2={x(ts)}
-              y2={height - 8}
-              stroke="var(--border)"
-              strokeDasharray="2 4"
-            />
-            <text x={x(ts)} y={AXIS_H - 12} textAnchor="middle" className="tl-tick">
-              {tickLabel(ts, step)}
-            </text>
-          </g>
-        ))}
+        {ticks.map(ts => {
+          // B4：首刻度可能紧贴 now 线（now 恰在 step 边界前），其居中标签会与「现在」重叠。
+          // 距 now 线 < 18px 时改为右对齐、从 GUTTER+6 向右生长，避开「现在」且不与次刻度相撞。
+          const nearNow = x(ts) - GUTTER < 18;
+          return (
+            <g key={ts}>
+              <line
+                x1={x(ts)}
+                y1={AXIS_H - 8}
+                x2={x(ts)}
+                y2={height - 8}
+                stroke="var(--border)"
+                strokeDasharray="2 4"
+              />
+              <text
+                x={nearNow ? GUTTER + 6 : x(ts)}
+                y={AXIS_H - 12}
+                textAnchor={nearNow ? "start" : "middle"}
+                className="tl-tick"
+              >
+                {tickLabel(ts, step)}
+              </text>
+            </g>
+          );
+        })}
 
         {/* now 游标 */}
         <line
