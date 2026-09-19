@@ -19,7 +19,8 @@ pub struct AppSettings {
     pub notifications_enabled: bool,
     /// 关闭窗口行为：tray = 最小化到托盘（不退出）；exit = 退出程序
     pub close_behavior: CloseBehavior,
-    /// 关闭行为为 exit 时，是否「退出前不再确认」（false = 关闭弹一次确认）
+    /// 关闭行为为 exit 时，关闭窗口是否弹一次确认（true = 弹确认框；false = 直接退出）。
+    /// 与 SettingsModal「退出前不再确认」复选框语义一致：勾选 = false = 直接退出。
     pub close_confirm_exit: bool,
 }
 

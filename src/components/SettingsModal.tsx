@@ -230,7 +230,7 @@ export default function SettingsModal({ onClose, onDataChanged }: Props) {
             <label style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 24 }}>
               <input
                 type="checkbox"
-                checked={settings.closeConfirmExit}
+                checked={!settings.closeConfirmExit}
                 onChange={e => setConfirmExit(e.target.checked)}
               />
               <span>退出前不再确认（勾选后关闭直接退出，不弹确认框）</span>
